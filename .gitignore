@@ -1,0 +1,15 @@
+# Retail game data: never checked in
+*.iso
+*.ISO
+*.exe
+*.EXE
+*.cab
+*.dll
+/game/
+/work/
+/build*/
+.venv/
+__pycache__/
+.DS_Store
+# Generated from the game: never checked in
+/build-app/
