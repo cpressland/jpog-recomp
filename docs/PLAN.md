@@ -203,17 +203,17 @@ Each phase ends with something that runs.
   installs the dispatcher (slot `0xD8CEC0 <- 0xD5DA00`, after 165 Win32
   calls), and runs to `ExitProcess` — so far **with no physical disc
   needed**. See [docs/RECON.md](RECON.md) for the run.
-- **Next: `tools/securom/resolve.py`.** Snapshot the emulator once the
-  dispatcher is in (API call 165), then for each of the 3,642 sites set the
-  caller frame (return address = site+6) and run the dispatcher, catching
-  the import it resolves to (the DLLs are not loaded, so its target is a
-  known thunk). Write `sites.json`. The dispatcher is a small jump-table VM
-  (`jmp [eax*4+…]`), so static resolution is impractical; driving it is the
-  way. A disc-layout check may yet gate the resolution (it has not bitten
-  under emulation so far); if it does, `cdrom.py` answers the drive IOCTLs
-  as tpw-recomp's does, and the weak-sector oracle is modelled.
-- **(b)**, the signature solver, is the fallback if (a)'s table proves
-  unreliable: `tfree`'s untouched slot and `CreateMutexA`/
+- **Resolution via nocd crack.** The dispatcher proved too complex to drive
+  statically (anti-tamper checks, encrypted resolution tables). Instead, we
+  used a publicly available nocd crack (`crack/simjp.exe` from archive.org)
+  which had already patched all 3,642 call sites back to their original
+  imports. `tools/securom/extract_from_crack.py` reads each call site from
+  the crack, extracts the IAT slot it calls, and maps it to the actual
+  import. **Done:** all 3,642 sites resolved, verified against known test
+  cases (`CreateMutexA` at `0x48434f`, `TApplication::Create` at `0x48440f`).
+  Output: `work/securom/sites.json`.
+- **(b)**, the signature solver, remains as a fallback if the crack's
+  resolutions prove incorrect: `tfree`'s untouched slot and `CreateMutexA`/
   `TApplication::Create` in `0x484330` are known answers to check it by.
 
 ### Phase 3 — catalog and lift, 22 modules (1–2 weeks)
