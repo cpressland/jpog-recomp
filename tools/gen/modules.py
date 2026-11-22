@@ -16,6 +16,8 @@ answers its calls (pcrecomp's bink.c on ffmpeg).
 
 # name, file in the game folder (/ between folders), base, PE timestamp of the build supported
 MODULES = (
+    # The game itself (SecuROM-wrapped, but resolved: docs/PLAN.md Phase 2)
+    ('simjp',        'SimJP.exe',               0x00400000, 0x3E434C37),
     # Toshi, Blue Tongue's engine, and the game's own DLLs (disc 1.00, Feb 2003)
     ('tkernel',      'TKernelInterface.dll',    0x01000000, 0x3E434BA1),
     ('trender',      'TRenderInterface.dll',    0x01100000, 0x3E434BB9),
@@ -63,7 +65,7 @@ def check():
     spans.sort()
     for (a0, a1, an), (b0, _, bn) in zip(spans, spans[1:]):
         assert a1 <= b0, f'{an} overlaps {bn}'
-    assert spans[0][0] >= 0x00E1D000 and spans[-1][1] <= 0x10000000, 'outside 0x00E1D000..0x10000000'
+    assert spans[0][0] >= 0x00400000 and spans[-1][1] <= 0x10000000, 'outside 0x00400000..0x10000000'
     print(f'{len(MODULES)} modules, no overlaps, 0x{spans[0][0]:08X}..0x{spans[-1][1]:08X}')
 
 

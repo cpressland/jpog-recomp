@@ -102,7 +102,11 @@ class Module:
 
     def __init__(self, work, name, file, base, stamp):
         self.name, self.base, self.stamp, self.file = name, base, stamp, file
-        self.path = os.path.join(work, name, os.path.basename(file))
+        # SimJP.exe uses a patched binary (SecuROM calls restored)
+        if name == 'simjp':
+            self.path = os.path.join(work, name, 'SimJP.exe')
+        else:
+            self.path = os.path.join(work, name, os.path.basename(file))
         self.work = os.path.join(work, name)
         pe = pefile.PE(self.path)
         if pe.FILE_HEADER.TimeDateStamp != stamp or pe.OPTIONAL_HEADER.ImageBase != base:
@@ -127,7 +131,14 @@ class Module:
                 at += 1
         info = analyze_pe(self.path)
         self.iat = build_iat_map(info)
-        self.cs, self.ce = info.code_start, info.code_end
+        # SimJP.exe has a special code range (only .text, not .cms_t)
+        code_range_path = os.path.join(self.work, 'code_range.json')
+        if os.path.exists(code_range_path):
+            with open(code_range_path) as f:
+                code_range = json.load(f)
+            self.cs, self.ce = code_range['code_start'], code_range['code_end']
+        else:
+            self.cs, self.ce = info.code_start, info.code_end
         self.code = self.image[self.cs - base:self.ce - base]
 
     def read(self, va, n):

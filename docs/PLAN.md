@@ -229,15 +229,22 @@ Each phase ends with something that runs.
 - Code is about a third of STL's (no D3DX), so the first build should be
   minutes, not STL's 12.
 
-**The DLLs are lifted (2026-11-22).** `tools/gen/modules.py` gives each of
+**All 20 modules are lifted (2026-11-22).** `tools/gen/modules.py` gives each of
 the 19 unprotected DLLs (13 Toshi and game DLLs, libmmd, the five shader
 DLLs) a 1 MB slot from `0x01000000`, below win32hle's heap; `0x01E00000` is
-held for fmod. `tools/gen/analyse.py` (STL's) catalogues them in 8 seconds,
-and `run_lift.py` (STL's, without the msvcr71 hooks: msvcrt is the host's)
-lifts them:
+held for fmod. SimJP.exe keeps its original base at `0x00400000`.
+
+SimJP.exe required special handling due to SecuROM:
+- `tools/gen/patch_simjp.py` rewrites the 3,642 redirected calls back to
+  their original IAT slots using `sites.json`, and patches references to
+  SecuROM's sections (.cms_t, .cms_d, .idata) to stub functions.
+- `tools/gen/analyse_simjp.py` analyses the patched binary, restricting the
+  code range to .text only (excluding .cms_t and .cms_d).
+- The lift produces 31,853 functions with 0 errors.
 
 | Module | Functions | Catalog coverage | EH frames with catches |
 |---|---|---|---|
+| `SimJP.exe` | 31,853 | — | 0 |
 | `TKernelInterface` | 2,196 | 88.5% | 0 |
 | `TRenderInterface` | 1,356 | 84.6% | 0 |
 | `TRenderD3DInterface` | 1,875 | 90.1% | 3 |
@@ -251,16 +258,15 @@ lifts them:
 | `libmmd` | 1,031 | 80.0% | 2 |
 | the five shader DLLs | 2,608 | 69–94% | 3 |
 
-20,298 functions, **no lift errors**, every frame with catch blocks given a
-landing pad; 2.18 million lines of C in 71 files, in 30 seconds. It all
-compiles (`CMakeLists.txt`, an object library until the host links it in
-Phase 4): no errors, **70 seconds** at `-O2` on a 10-core M-series Mac,
-8 jobs. Toshi is
+52,151 functions total, **no lift errors**, every frame with catch blocks given a
+landing pad; 5.93 million lines of C in 172 files. It all compiles
+(`CMakeLists.txt`, an object library until the host links it in Phase 4):
+no errors, about 2 minutes at `-O2` on a 10-core M-series Mac. Toshi is
 built without MSVC RTTI (it has its own `TClass`), so `rtti.py` seeds
 nothing; the low-coverage modules are small ones where the rest of the code
 range is padding and data, to be checked when they run (unlifted code
 reached at run time names itself). Not yet: fmod (unpacked, its relocation
-not yet confirmed), SimJP.exe (a separate step).
+not yet confirmed).
 
 ### Phase 4 — boot to a black window (1–2 weeks)
 - `src/host/loader.c` (STL's): map and bind the 22 modules, exe ⇄ Units
