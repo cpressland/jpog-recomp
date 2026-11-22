@@ -1,0 +1,4 @@
+# The pcrecomp this project builds with: the fork's stl branch, as stl-recomp
+# pins it (app/pcrecomp.lock there). A release (and anyone building) checks this out.
+repository=cpressland/pcrecomp
+ref=b7f76500c375ac5f0acad8f0657cc22f506d6257

@@ -229,6 +229,39 @@ Each phase ends with something that runs.
 - Code is about a third of STL's (no D3DX), so the first build should be
   minutes, not STL's 12.
 
+**The DLLs are lifted (2026-11-22).** `tools/gen/modules.py` gives each of
+the 19 unprotected DLLs (13 Toshi and game DLLs, libmmd, the five shader
+DLLs) a 1 MB slot from `0x01000000`, below win32hle's heap; `0x01E00000` is
+held for fmod. `tools/gen/analyse.py` (STL's) catalogues them in 8 seconds,
+and `run_lift.py` (STL's, without the msvcr71 hooks: msvcrt is the host's)
+lifts them:
+
+| Module | Functions | Catalog coverage | EH frames with catches |
+|---|---|---|---|
+| `TKernelInterface` | 2,196 | 88.5% | 0 |
+| `TRenderInterface` | 1,356 | 84.6% | 0 |
+| `TRenderD3DInterface` | 1,875 | 90.1% | 3 |
+| `TTerrainInterface` | 440 | 92.5% | 0 |
+| `TGuiInterface` | 2,058 | 92.4% | 0 |
+| `TInputInterface` / `TInputDXInterface` | 147 / 441 | 58.0% / 74.6% | 0 |
+| `TApplication` | 24 | 37.7% | 0 |
+| `PPropertyParser` / `PGUICore` / `PGUIRenderer` | 440 / 2,006 / 260 | 88.6% / 91.9% / 83.5% | 0 |
+| `SimJPTerrain` | 1,149 | 95.2% | 0 |
+| `Units` | 4,463 | 73.4% | 0 |
+| `libmmd` | 1,031 | 80.0% | 2 |
+| the five shader DLLs | 2,608 | 69–94% | 3 |
+
+20,298 functions, **no lift errors**, every frame with catch blocks given a
+landing pad; 2.18 million lines of C in 71 files, in 30 seconds. It all
+compiles (`CMakeLists.txt`, an object library until the host links it in
+Phase 4): no errors, **70 seconds** at `-O2` on a 10-core M-series Mac,
+8 jobs. Toshi is
+built without MSVC RTTI (it has its own `TClass`), so `rtti.py` seeds
+nothing; the low-coverage modules are small ones where the rest of the code
+range is padding and data, to be checked when they run (unlifted code
+reached at run time names itself). Not yet: fmod (unpacked, its relocation
+not yet confirmed), SimJP.exe (a separate step).
+
 ### Phase 4 — boot to a black window (1–2 weeks)
 - `src/host/loader.c` (STL's): map and bind the 22 modules, exe ⇄ Units
   both ways, the shader DLLs when the game `LoadLibrary`s them; enter at

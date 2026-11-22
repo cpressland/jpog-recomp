@@ -12,8 +12,25 @@ them) and Windows. Built on the
 **Status: early.** The game folder builds from the disc image with no Windows
 and no installer; the SecuROM wrapper on `SimJP.exe` has been fully resolved
 (see [docs/PLAN.md](docs/PLAN.md), Phase 2). All 3,642 redirected import
-calls have been mapped back to their original targets. Nothing is lifted or
-drawn yet.
+calls have been mapped back to their original targets. The 19 unprotected
+DLLs (Toshi, the game's own, the shader DLLs, libmmd) are lifted to C and
+compile; there is no host yet, so nothing runs or draws.
+
+## The lift
+
+With pcrecomp at `app/pcrecomp.lock`'s commit beside this repository (or
+`PCRECOMP=DIR`), after the game folder:
+
+```
+.venv/bin/python -I tools/gen/analyse.py GAME work/analysis   # catalogs, seconds
+.venv/bin/python -I run_lift.py --work work/analysis --out work/gen
+cmake -S . -B build-macos -G Ninja && cmake --build build-macos
+```
+
+`tools/gen/modules.py` names the modules and the base each is lifted at
+(every DLL wants `0x10000000`, so each moves to its own 1 MB from
+`0x01000000`; `tools/gen/rebase.py`). 20,298 functions, no lift errors,
+2.18 million lines of C that compile in about a minute.
 
 Nothing of the game is in this repository, and nothing generated from it.
 
