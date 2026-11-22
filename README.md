@@ -10,10 +10,10 @@ them) and Windows. Built on the
 [tpw-recomp](https://github.com/cpressland/tpw-recomp).
 
 **Status: early.** The game folder builds from the disc image with no Windows
-and no installer; the SecuROM wrapper on `SimJP.exe` has been taken apart far
-enough to show the game's own code and import table are intact, and its
-dispatcher can be driven headless under emulation (see
-[docs/PLAN.md](docs/PLAN.md), Phase 2). Nothing is lifted or drawn yet.
+and no installer; the SecuROM wrapper on `SimJP.exe` has been fully resolved
+(see [docs/PLAN.md](docs/PLAN.md), Phase 2). All 3,642 redirected import
+calls have been mapped back to their original targets. Nothing is lifted or
+drawn yet.
 
 Nothing of the game is in this repository, and nothing generated from it.
 
@@ -55,8 +55,12 @@ own encrypted code. `tools/securom/survey.py` records all of this, and
 `tools/securom/probe.py` runs the wrapper headless under Unicorn
 (tpw-recomp's SafeDisc emulator, at `tools/securom/emu`): it decrypts itself
 and installs the dispatcher **from the disc image, with no physical disc**.
-Recovering the 3,642-entry call-site table from that dispatcher is the next
-step. See [docs/RECON.md](docs/RECON.md).
+
+The 3,642-entry call-site table has been fully resolved using a nocd crack
+as a reference. `tools/securom/extract_from_crack.py` extracts the original
+import for each redirected call site. The result is `work/securom/sites.json`,
+which maps each call site to its original DLL and function. See
+[docs/RECON.md](docs/RECON.md).
 
 ## The engine
 

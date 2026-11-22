@@ -99,3 +99,36 @@ behind anti-tamper and SEH. So resolving the 3,642 sites statically is
 impractical; the resolver drives this dispatcher per site instead
 (PLAN.md Phase 2). The decrypted image is dumped to
 `work/securom/simjp-decrypted.bin` for analysis.
+
+## Resolution via nocd crack
+
+The dispatcher's resolution logic proved too complex to drive dynamically
+(anti-tamper checks, encrypted tables, state restoration issues). Instead,
+we used a publicly available nocd crack (`crack/simjp.exe`, from
+[archive.org](https://archive.org/details/jurassic-park-operation-genesis))
+which had already patched all 3,642 call sites back to their original
+imports.
+
+The crack changes the entry point from `0xD7EF8A` (SecuROM's CRT startup)
+to `0x331118` (the game's real main at `0x484330`), bypassing the dispatcher
+entirely. Each redirected `call [0xD8CEC0]` is patched back to `call [IAT
+slot]`, where the IAT slot points to the original import.
+
+`tools/securom/extract_from_crack.py` reads each of the 3,642 call sites,
+extracts the IAT slot address from the `ff 15` instruction, and maps it to
+the actual import via the PE's import directory. **Result:** all 3,642 sites
+resolved, written to `work/securom/sites.json`. Verified against the known
+test cases: `CreateMutexA` at `0x48434f` and `TApplication::Create` at
+`0x48440f` both match.
+
+Distribution by DLL:
+- `tkernelinterface.dll`: 2,782 (76%)
+- `ppropertyparser.dll`: 338
+- `tguiinterface.dll`: 275
+- `simjpterrain.dll`: 72
+- `trenderinterface.dll`: 56
+- `pguicore.dll`: 43
+- `tterraininterface.dll`: 33
+- `kernel32.dll`: 17
+- `msvcrt.dll`: 12
+- others: 16
