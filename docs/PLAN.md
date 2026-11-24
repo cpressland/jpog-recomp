@@ -281,6 +281,27 @@ not yet confirmed).
 - A `d3d8.c` that creates a device and presents nothing. Done when the
   game runs its main loop headless (the STL milestone).
 
+**The DLLs run (2026-11-24).** `src/host` maps and binds the 19 DLLs and runs
+`DllMain` in import order: all 18 that can attach do, the five shader DLLs
+through `LoadLibrary` (`Units.dll` imports 800 symbols from `SimJP.exe`, so
+it needs the exe), with **no import unimplemented**. `jpog --selftest` then
+checks 46 things: `msvcrt.c`'s MSVC rules, 14 of lifted libmmd's functions
+against the host's libm (501 points each, to 1e-12; SSE and x87 paths), and
+Toshi's `TMatrix44::Invert`. What it took:
+
+- `msvcrt.c`: the 91 imports, cdecl, with MSVC's printf and scanf (wide and
+  narrow), text-mode files, `rand`, `_ftol` and `_CI*` on the x87 ring. Its
+  variables (`_iob`, `_adjust_fdiv`) are bound by address. To go upstream.
+- No DLL imports `_CxxThrowException`; `__CxxFrameHandler` and
+  `_except_handler3` are only ever addresses.
+- Win32 that win32hle lacked: 18 calls (`shims.c`), the `W` ones on the `A`.
+- `SuspendThread` and `TerminateThread` fail: a guest thread is a host one
+  under the machine lock. To watch, when the engine's threads run.
+
+Not yet: `Direct3DCreate8` (answers NULL), FMOD, the drives and registry, and
+the game's own entry. `fmod.dll`'s 41 calls can be answered by the host (SDL
+audio) rather than lifted; see Phase 6's fallback.
+
 ### Phase 5 — Direct3D 8 on Metal (the bulk: 4–8 weeks)
 1. `IDirect3D8`: one adapter, caps of a 2003 DX8.1 card (GeForce 4 Ti /
    Radeon 8500), display modes; `CreateDevice`, `Reset` (Toshi handles

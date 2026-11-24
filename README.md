@@ -13,8 +13,8 @@ them) and Windows. Built on the
 and no installer; the SecuROM wrapper on `SimJP.exe` has been fully resolved
 (see [docs/PLAN.md](docs/PLAN.md), Phase 2). All 3,642 redirected import
 calls have been mapped back to their original targets. All 20 modules
-(SimJP.exe, 19 DLLs) are lifted to C and compile; there is no host yet, so
-nothing runs or draws.
+(SimJP.exe, 19 DLLs) are lifted to C and compile. The host maps and binds the
+DLLs, runs their start-up and checks them (below); nothing draws yet.
 
 ## The lift
 
@@ -33,6 +33,21 @@ cmake -S . -B build-macos -G Ninja && cmake --build build-macos
 `0x01000000`; `tools/gen/rebase.py`). SimJP.exe keeps its original base at
 `0x00400000`. 52,151 functions, no lift errors, 5.93 million lines of C that
 compile in about 2 minutes.
+
+## The host
+
+`src/host` on pcrecomp's `runtime/win32hle`, with SDL2 and SDL2_ttf from
+pkg-config (Homebrew): `loader.c` maps the modules at their bases and binds
+them to each other, `msvcrt.c` is Windows' C runtime (not on the disc),
+`shims.c` the Win32 calls win32hle lacks, `setjmp.c` and `cpu.c` as
+stl-recomp's. Its test needs only the DLLs, lifted to a folder of their own
+(`--modules` with every module but `simjp`):
+
+```
+.venv/bin/python -I run_lift.py --work work/analysis --out work/gen-dlls --modules tkernel,trender,...
+cmake -S . -B build-dlls -G Ninja -DGEN_DIR=$PWD/work/gen-dlls && cmake --build build-dlls
+build-dlls/jpog --game GAME --selftest
+```
 
 Nothing of the game is in this repository, and nothing generated from it.
 

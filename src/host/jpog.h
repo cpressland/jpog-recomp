@@ -1,0 +1,41 @@
+/* jpog.h - what the host's files share. */
+#pragma once
+#include <stdint.h>
+#include "win32hle.h"
+#include "pe_loader.h"
+#include "recomp_target.h"
+
+#define JPOG_MAX_MODULES 32
+
+typedef struct {
+    const char *file;        /* its name: TKernelInterface.dll */
+    const char *path;        /* where in the game folder: Shaders\D3D\TSkinShaderD3D.dll */
+    pe_image    img;
+    int         is_exe;
+    int         on_demand;   /* the game loads it (LoadLibrary): a shader DLL */
+    int         refs;        /* ...how many loads it has not freed */
+    int         state;       /* 0 not attached, 1 attaching, 2 attached */
+    int         missing;     /* imports from a module of the game this build has not lifted */
+} jpog_module;
+
+extern jpog_module g_jpog_mod[JPOG_MAX_MODULES];
+extern int g_jpog_nmod, g_jpog_stubs, jpog_verbose;
+
+int  jpog_load(const char *game);                                   /* loader.c: map and bind every module */
+int  jpog_attach(jpog_module *m);                                   /* DllMain, after its imports' */
+int  jpog_attach_dlls(void);
+jpog_module *jpog_module_named(const char *dll);
+jpog_module *jpog_module_at(uint32_t base);
+uint32_t jpog_export(const char *dll, const char *name);
+uint32_t jpog_export_of(const jpog_module *m, const char *name, uint32_t ordinal);
+uint32_t jpog_load_library(const char *name);                       /* a lifted module the game loads: its base, or 0 */
+int  jpog_free_library(uint32_t base);                              /* 1 if base was one */
+
+uint32_t jpog_msvcrt_data(const char *name);                        /* msvcrt.c: a variable msvcrt exports, or 0 */
+void jpog_setjmp3(void);                                            /* setjmp.c */
+void jpog_longjmp(void);
+void jpog_cpuid(void);                                              /* cpu.c */
+int  jpog_selftest(void);                                           /* selftest.c: how many checks failed */
+
+extern const win32hle_shim jpog_msvcrt_shims[];                     /* msvcrt.c */
+extern const win32hle_shim jpog_shims[];                            /* shims.c */
