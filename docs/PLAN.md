@@ -314,7 +314,8 @@ The exe's imports, compared with what is answered, lacked ten Windows calls
 Not yet: the game's own entry. `src/host/game.c` (`--run`) goes straight to its
 main, past the C runtime's start-up, so `SimJP.exe`'s global objects are not
 constructed, and it makes `TApplication` where the game's object is its own
-`AApplication` (the base's `OnUpdate` does nothing, so the loop is empty).
+`AApplication` (the base's `OnUpdate` does nothing, so the loop is empty). The brief for it is
+[STARTUP.md](STARTUP.md).
 
 ### Phase 5 — Direct3D 8 on Metal (the bulk: 4–8 weeks)
 1. `IDirect3D8`: one adapter, caps of a 2003 DX8.1 card (GeForce 4 Ti /
