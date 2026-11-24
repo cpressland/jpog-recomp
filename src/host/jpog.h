@@ -49,6 +49,13 @@ extern int jpog_fsound_offline;                                     /* no sound 
 void jpog_fsound_render(float *stereo, int frames);
 int  jpog_listen(const char *what);                                 /* a sound or piece of music, or "all" */
 void jpog_selftest_fsound(void);                                    /* selftest_fsound.c */
+void jpog_selftest_movies(void);                                    /* selftest_movies.c */
+int  jpog_movie_sound(int rate);                                    /* a movie's sound in the mixer: an id, or -1 */
+void jpog_movie_sound_push(int id, const float *l, const float *r, int frames);
+void jpog_movie_sound_on(int id, int on);
+void jpog_movie_sound_close(int id);
+extern const win32hle_shim jpog_bink_shims[];                       /* movies.c: binkw32.dll */
+int  jpog_movie(const char *file, const char *shot, int frames);
 int  jpog_gui(const char *dialog, const char *file, const char *locale, const char *shot, int frames);
 int  jpog_terrain(const char *island, const char *shot, int frames);
 int  jpog_view(const char *model, const char *keys, const char *materials, int anim, const char *shot, int frames);

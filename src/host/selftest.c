@@ -210,6 +210,7 @@ int jpog_selftest(void) {
     jpog_selftest_d3d8();
     jpog_selftest_engine();
     jpog_selftest_fsound();
+    jpog_selftest_movies();
     mach_leave();
     printf("selftest: %d checks, %d failed\n", g_checks, g_failed);
     return g_failed;

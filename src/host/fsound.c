@@ -86,6 +86,7 @@ static size_t g_bytes, g_most;
 static sample_t *g_samples;
 static stream_t *g_streams;
 static SDL_AudioDeviceID g_dev;
+static void device(void);
 static struct { float pos[3], vel[3], fwd[3], top[3]; } g_ear = { { 0 }, { 0 }, { 0, 0, 1 }, { 0, 1, 0 } };
 int jpog_fsound_offline;                     /* no device: what is asked of jpog_fsound_render */
 
@@ -314,9 +315,51 @@ static void mix_channel(chan_t *c, float *out, int frames) {
     }
     if (t) t->rd = (uint64_t)c->pos < t->wr ? (uint64_t)c->pos : t->wr;
 }
+/* A movie's sound (movies.c): what it has decoded, played at its own rate. */
+enum { MOVIES = 4, MOVIE_RING = 1 << 18 };
+static struct { int used, rate, on; float *ring; uint64_t wr; double pos; } g_movie[MOVIES];
+int jpog_movie_sound(int rate) {
+    int id = -1;
+    device();
+    pthread_mutex_lock(&g_lock);
+    for (int i = 0; i < MOVIES && id < 0; i++)
+        if (!g_movie[i].used) {
+            id = i;
+            memset(&g_movie[i], 0, sizeof g_movie[i]);
+            g_movie[i].used = g_movie[i].on = 1, g_movie[i].rate = rate, g_movie[i].ring = calloc(MOVIE_RING, 2 * sizeof(float));
+        }
+    pthread_mutex_unlock(&g_lock);
+    return id;
+}
+void jpog_movie_sound_push(int id, const float *l, const float *r, int frames) {
+    pthread_mutex_lock(&g_lock);
+    for (int i = 0; i < frames && g_movie[id].wr - (uint64_t)g_movie[id].pos < MOVIE_RING - 2; i++, g_movie[id].wr++) {
+        float *p = g_movie[id].ring + 2 * (g_movie[id].wr % MOVIE_RING);
+        p[0] = l[i], p[1] = r[i];
+    }
+    pthread_mutex_unlock(&g_lock);
+}
+void jpog_movie_sound_on(int id, int on) { pthread_mutex_lock(&g_lock); g_movie[id].on = on; pthread_mutex_unlock(&g_lock); }
+void jpog_movie_sound_close(int id) {
+    pthread_mutex_lock(&g_lock);
+    free(g_movie[id].ring);
+    memset(&g_movie[id], 0, sizeof g_movie[id]);
+    pthread_mutex_unlock(&g_lock);
+}
+static void mix_movie(int id, float *out, int frames) {
+    double step = (double)g_movie[id].rate / g_rate, pos = g_movie[id].pos;
+    for (int i = 0; i < frames && pos + 1 < (double)g_movie[id].wr; i++, pos += step) {
+        uint64_t k = (uint64_t)pos;
+        const float *a = g_movie[id].ring + 2 * (k % MOVIE_RING), *b = g_movie[id].ring + 2 * ((k + 1) % MOVIE_RING);
+        float f = (float)(pos - (double)k);
+        if (g_movie[id].on) out[2 * i] += a[0] + (b[0] - a[0]) * f, out[2 * i + 1] += a[1] + (b[1] - a[1]) * f;
+    }
+    g_movie[id].pos = pos;
+}
 void jpog_fsound_render(float *out, int frames) {
     memset(out, 0, (size_t)frames * 2 * sizeof *out);
     pthread_mutex_lock(&g_lock);
+    for (int i = 0; i < MOVIES; i++) if (g_movie[i].used) mix_movie(i, out, frames);
     for (int i = 0; i < g_nch && g_open; i++) if (g_ch[i].used && !g_ch[i].paused) mix_channel(&g_ch[i], out, frames);
     pthread_mutex_unlock(&g_lock);
     for (int i = 0; i < frames * 2; i++) out[i] = out[i] > 1 ? 1 : out[i] < -1 ? -1 : out[i];
@@ -352,6 +395,21 @@ static void *feeder(void *ud) {              /* the streams' decoding, off the s
         }
         usleep(20000);
     }
+}
+
+/* The sound card, and the thread that keeps it in music: FMOD's, or a movie's
+ * before it. */
+static void device(void) {
+    if (g_dev || jpog_headless || jpog_fsound_offline) return;
+    SDL_AudioSpec w, have;
+    SDL_zero(w);
+    w.freq = g_rate, w.format = AUDIO_F32SYS, w.channels = 2, w.samples = 1024, w.callback = audio;
+    if (SDL_InitSubSystem(SDL_INIT_AUDIO) == 0) g_dev = SDL_OpenAudioDevice(NULL, 0, &w, &have, 0);
+    if (!g_dev) return;
+    pthread_t t;
+    g_feeding = 1;
+    if (pthread_create(&t, NULL, feeder, NULL) == 0) pthread_detach(t);
+    SDL_PauseAudioDevice(g_dev, 0);
 }
 
 /* ---- channels ----------------------------------------------------------------- */
@@ -398,23 +456,13 @@ X(SetSpeakerMode) { RET(0, 1); }
 X(Init) {                                                /* (rate, channels, flags) */
     int rate = (int)A32(0), n = (int)A32(1);
     if (g_open) RET(1, 3);
-    g_rate = rate >= 4000 && rate <= 65535 ? rate : 44100;
+    if (!g_dev) g_rate = rate >= 4000 && rate <= 65535 ? rate : 44100;   /* a movie's sound may have opened it */
     g_nch = n < 1 ? 1 : n > MAX_CHANNELS ? MAX_CHANNELS : n;
     memset(g_ch, 0, sizeof g_ch);
     g_open = 1, g_master = 255;
-    if (!jpog_headless && !jpog_fsound_offline) {
-        SDL_AudioSpec w, have;
-        SDL_zero(w);
-        w.freq = g_rate, w.format = AUDIO_F32SYS, w.channels = 2, w.samples = 1024, w.callback = audio;
-        if (SDL_InitSubSystem(SDL_INIT_AUDIO) == 0) g_dev = SDL_OpenAudioDevice(NULL, 0, &w, &have, 0);
-        if (g_dev) {
-            pthread_t t;
-            g_feeding = 1;
-            if (pthread_create(&t, NULL, feeder, NULL) == 0) pthread_detach(t);
-            SDL_PauseAudioDevice(g_dev, 0);
-        }
+    device();
+    if (!jpog_headless && !jpog_fsound_offline)
         fprintf(stderr, "[fmod] %s, %d Hz, %d channels\n", g_dev ? SDL_GetCurrentAudioDriver() : SDL_GetError(), g_rate, g_nch);
-    }
     RET(1, 3);
 }
 X(Close) {

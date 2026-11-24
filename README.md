@@ -38,8 +38,8 @@ compile in about 2 minutes.
 
 ## The host
 
-`src/host` on pcrecomp's `runtime/win32hle`, with SDL2, SDL2_ttf and
-libvorbisfile from pkg-config (Homebrew): `loader.c` maps the modules at their bases and binds
+`src/host` on pcrecomp's `runtime/win32hle`, with SDL2, SDL2_ttf,
+libvorbisfile and ffmpeg from pkg-config (Homebrew): `loader.c` maps the modules at their bases and binds
 them to each other, `msvcrt.c` is Windows' C runtime (not on the disc),
 `shims.c` the Win32 calls win32hle lacks, `setjmp.c` and `cpu.c` as
 stl-recomp's. Direct3D 8 is `d3d8.c` (the interfaces and state), `dxso.c`
@@ -92,6 +92,13 @@ them (`src/host/fsound.c`; libvorbisfile for the music):
 ```
 build-dlls/jpog --game GAME --listen Data/Music/Welcome.ogg
 build-dlls/jpog --game GAME --listen all       # all 928, headless, in seconds
+```
+
+A movie, through `binkw32.dll`'s (`src/host/movies.c`; ffmpeg, from pkg-config
+or `-DJPOG_FFMPEG=` a static one):
+
+```
+build-dlls/jpog --game GAME --movie Data/Movies/Intro.bik --windowed
 ```
 
 `JPOG_WAV=FILE` keeps what is played.

@@ -429,8 +429,7 @@ pictures on this disc). Metal's validation reports nothing on the main menu;
 ### Phase 6 — sound, movies, input (1–2 weeks, alongside 5)
 - FMOD 3: the 41 `FSOUND_*` calls the game makes, answered by the host on SDL
   audio (done; below).
-- Bink intro and title movies through `bink.c` (`BinkCopyToBuffer(Rect)`,
-  `BinkOpenDirectSound`).
+- Bink's intro and title movies (done; below).
 - DirectInput 8 mouse and keyboard; controller later (Phase 8).
 
 **FMOD answered (2026-11-24).** `src/host/fsound.c` is every call `SimJP.exe`
@@ -450,6 +449,23 @@ within 2 in 32,768 of ffmpeg's decoding, with no gaps.
   (FMOD told it from a thread of its own).
 - Not done: reverse loops (`LOOP_BIDI` loops forwards), compressed WAVs, MP3,
   DSP units, speaker modes; none of the game's files or imports needs them.
+
+**Bink answered (2026-11-24).** `src/host/movies.c` is the 13 calls `SimJP.exe`
+imports from `binkw32.dll`, on ffmpeg's decoder, their sound in `fsound.c`'s
+mixer. The disc has three movies: the intro (2 minutes 30) and the title's gate,
+opening and looping. `jpog --movie` plays one through Direct3D 8. `--selftest`
+checks the calls (20 checks). The intro's sound is ffmpeg's decoding sample for
+sample, with no gaps in real time; its picture is within 0.14% of ffmpeg's,
+scaled; the loop's second round is its first.
+
+- Not pcrecomp's `bink.c`, which lacks five of the calls, and whose `BinkGoto`
+  finds no frames: it seeks by bytes (`AVSEEK_FLAG_BYTE`), where the Bink
+  demuxer has a seek of its own. Anything that loops by it shows nothing.
+- The game has no call to seek with, so the title must loop by Bink's own going
+  round: `BinkNextFrame` past the last frame is frame 1.
+- Not answered: movies by file handle, YUV surfaces, several sound tracks
+  (the first is played). A build with no ffmpeg shows no pictures; the app's
+  needs its Bink and its demuxer, as stl-recomp's has.
 
 ### Phase 7 — the app (about a week: STL's)
 - `app/` from STL: `Jurassic Park Operation Genesis.app`, **Download and
