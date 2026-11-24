@@ -75,6 +75,32 @@ static void g_ExtTextOutA(void) {      /* (dc, x, y, options, rect, text, n, dx)
     RET(r, 8);
 }
 
+/* The priorities, privileges and cursors SimJP.exe asks about: there are none
+ * to change. A privilege is looked up, and not granted, as for a user who has
+ * not got it. */
+static void k_SetThreadPriorityBoost(void) { RET(1, 2); }
+static void k_GetPriorityClass(void)       { RET(0x20, 1); }         /* NORMAL_PRIORITY_CLASS */
+static void a_OpenProcessToken(void) {                               /* (process, access, &token): something to close */
+    uint32_t h = hle_call_guest(hle_resolve("CreateEventA"), 4, (uint32_t[]){ 0, 1, 0, 0 });
+    if (A32(2)) MEM32(A32(2)) = h;
+    RET(h != 0, 3);
+}
+static void a_LookupPrivilegeValueA(void) {                          /* (system, name, &luid) */
+    if (A32(2)) MEM32(A32(2)) = 19, MEM32(A32(2) + 4) = 0;
+    RET(1, 3);
+}
+static void a_AdjustTokenPrivileges(void) { hle_set_last_error(1300); RET(1, 6); }   /* ERROR_NOT_ALL_ASSIGNED */
+static void u_SetSystemCursor(void)        { RET(1, 2); }
+static void u_LoadCursorFromFileA(void)    { uint32_t c = hle_call_guest(hle_resolve("LoadCursorA"), 2, (uint32_t[]){ 0, 32512 }); RET(c, 1); }   /* the arrow */
+static void u_CopyImage(void)              { RET(A32(0), 5); }       /* (image, kind, w, h, flags): itself */
+static void g_RectVisible(void)            { RET(1, 2); }
+static void g_SetStretchBltMode(void) {                              /* (dc, mode) -> the one before */
+    static uint32_t mode = 1;                                        /* BLACKONWHITE */
+    uint32_t was = mode;
+    mode = A32(1);
+    RET(was, 2);
+}
+
 /* GetDriveTypeA - return CDROM for drive D: */
 static void k_GetDriveTypeA(void) {
     const char *path = ASTR(0);
@@ -158,6 +184,11 @@ const win32hle_shim jpog_shims[] = {
     { "SuspendThread", k_SuspendThread }, { "TerminateThread", k_TerminateThread },
     { "CreateAcceleratorTableA", u_CreateAcceleratorTableA }, { "DestroyAcceleratorTable", u_DestroyAcceleratorTable },
     { "UnregisterClassA", u_UnregisterClassA }, { "SetMapMode", g_SetMapMode }, { "ExtTextOutA", g_ExtTextOutA },
+    { "SetThreadPriorityBoost", k_SetThreadPriorityBoost }, { "GetPriorityClass", k_GetPriorityClass },
+    { "OpenProcessToken", a_OpenProcessToken }, { "LookupPrivilegeValueA", a_LookupPrivilegeValueA },
+    { "AdjustTokenPrivileges", a_AdjustTokenPrivileges }, { "SetSystemCursor", u_SetSystemCursor },
+    { "LoadCursorFromFileA", u_LoadCursorFromFileA }, { "CopyImage", u_CopyImage },
+    { "RectVisible", g_RectVisible }, { "SetStretchBltMode", g_SetStretchBltMode },
     { "GetDriveTypeA", k_GetDriveTypeA }, { "GetVolumeInformationA", k_GetVolumeInformationA },
     { "GetLogicalDriveStringsA", k_GetLogicalDriveStringsA },
     { "CreateFileA", k_CreateFileA },

@@ -57,6 +57,7 @@ void jpog_movie_sound_close(int id);
 extern const win32hle_shim jpog_bink_shims[];                       /* movies.c: binkw32.dll */
 int  jpog_movie(const char *file, const char *shot, int frames);
 int  jpog_gui(const char *dialog, const char *file, const char *locale, const char *shot, int frames);
+int  jpog_park(const char *shot, int frames);
 int  jpog_terrain(const char *island, const char *shot, int frames);
 int  jpog_view(const char *model, const char *keys, const char *materials, int anim, const char *shot, int frames);
 void jpog_selftest_engine(void);                                    /* selftest_engine.c */

@@ -44,7 +44,7 @@ them to each other, `msvcrt.c` is Windows' C runtime (not on the disc),
 `shims.c` the Win32 calls win32hle lacks, `setjmp.c` and `cpu.c` as
 stl-recomp's. Direct3D 8 is `d3d8.c` (the interfaces and state), `dxso.c`
 (vs_1_1 and ps_1_1 to Metal's language), `ff.c` (fixed function, likewise)
-and `d3d_metal.m`; `engine.c` and `gui.c` drive the engine. Its test needs only the DLLs, lifted to a folder of their own
+and `d3d_metal.m`; `engine.c`, `terrain.c`, `gui.c` and `park.c` drive the engine. Its test needs only the DLLs, lifted to a folder of their own
 (`--modules` with every module but `simjp`):
 
 ```
@@ -99,6 +99,15 @@ or `-DJPOG_FFMPEG=` a static one):
 
 ```
 build-dlls/jpog --game GAME --movie Data/Movies/Intro.bik --windowed
+```
+
+All of it at once, still with no `SimJP.exe` and so with no game: an island,
+walking dinosaurs, the HUD, music and sound (`src/host/park.c`). W A S D and the
+arrows fly, Tab follows the next dinosaur, an icon opens a dialog:
+
+```
+build-dlls/jpog --game GAME --park --windowed
+python3 tools/test/park.py build-dlls/jpog GAME     # 25 runs, headless, two minutes
 ```
 
 `JPOG_WAV=FILE` keeps what is played.

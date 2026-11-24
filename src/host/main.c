@@ -73,12 +73,13 @@ static void keep_registry(const char *game) {
 __attribute__((visibility("default"))) int jpog_main(int argc, char **argv) {
     const char *game = "game";
     const char *view = NULL, *terrain = NULL, *gui = NULL, *listen = NULL, *movie = NULL, *gui_file = "Data/GUI/main.gui", *locale = "English", *keys = NULL, *materials = NULL, *shot = NULL;
-    int selftest = 0, run = 0, anim = -1, frames = 0, windowed = 0, headless = 0;
+    int selftest = 0, run = 0, park = 0, anim = -1, frames = 0, windowed = 0, headless = 0;
     setvbuf(stderr, NULL, _IONBF, 0);
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--game") && i + 1 < argc) game = argv[++i];
         else if (!strcmp(argv[i], "--selftest")) selftest = 1;
         else if (!strcmp(argv[i], "--run")) run = 1;
+        else if (!strcmp(argv[i], "--park")) park = 1;
         else if (!strcmp(argv[i], "--view") && i + 1 < argc) view = argv[++i];
         else if (!strcmp(argv[i], "--terrain") && i + 1 < argc) terrain = argv[++i];
         else if (!strcmp(argv[i], "--gui") && i + 1 < argc) gui = argv[++i];
@@ -102,7 +103,7 @@ __attribute__((visibility("default"))) int jpog_main(int argc, char **argv) {
         else if (!strcmp(argv[i], "--verbose")) jpog_verbose = 1;
         else if (!strcmp(argv[i], "--trace")) win32hle_trace = 1;
         else {
-            printf("usage: jpog [--game DIR] [--run | --selftest | --view MODEL.tmd | --terrain nublar|SEED | --gui DIALOG | --listen FILE | --movie FILE] [--verbose] [--trace]\n"
+            printf("usage: jpog [--game DIR] [--run | --selftest | --view MODEL.tmd | --terrain nublar|SEED | --gui DIALOG | --listen FILE | --movie FILE | --park] [--verbose] [--trace]\n"
                    "  --game DIR   the game folder (default: game)\n"
                    "  --run        run the game (SimJP.exe)\n"
                    "  --selftest   attach every DLL and check the host and the lifted code against known answers\n"
@@ -111,6 +112,7 @@ __attribute__((visibility("default"))) int jpog_main(int argc, char **argv) {
                    "  --gui DIALOG [--gui-file FILE.gui] [--locale NAME]   a dialog of the game's, through its GUI\n"
                    "  --listen FILE   a .wav or .ogg of the game's, through fmod.dll's calls (all: every one, headless)\n"
                    "  --movie FILE.bik   a movie of the game's, through binkw32.dll's calls (--frames past its end: again)\n"
+                   "  --park       a park: an island, dinosaurs, the HUD, music and sound, all at once\n"
                    "  those:       [--headless] [--windowed] [--frames N] [--shot FILE.bmp (the last of N)]\n"
                    "  --verbose    every module, and every stub as it is bound\n"
                    "  --trace      every import call, as it is made\n"
@@ -157,7 +159,7 @@ __attribute__((visibility("default"))) int jpog_main(int argc, char **argv) {
     if (jpog_load(full) != 0) return 1;
     printf(JPOG_TITLE " recomp host: %u lifted functions, %d modules, %d imports not implemented yet%s\n",
            recomp_dispatch_count, g_jpog_nmod, g_jpog_stubs, g_jpog_stubs && !jpog_verbose ? " (--verbose lists them)" : "");
-    if (!run && !selftest && !view && !terrain && !gui && !listen && !movie) return 0;
+    if (!run && !selftest && !view && !terrain && !gui && !listen && !movie && !park) return 0;
     fflush(stdout);
     if (chdir(full) != 0) { fprintf(stderr, "cannot enter %s\n", full); return 1; }
     if (listen) { jpog_headless = headless; hle_exit(jpog_listen(listen)); }
@@ -173,10 +175,10 @@ __attribute__((visibility("default"))) int jpog_main(int argc, char **argv) {
         int rc = jpog_run_game();
         hle_exit(rc);
     }
-    if (view || terrain || gui || movie) {
+    if (view || terrain || gui || movie || park) {
         jpog_headless = headless;
         if (hle_screen_open(JPOG_TITLE, !windowed, headless) != 0) return 1;
-        int rc = movie ? jpog_movie(movie, shot, frames) : gui ? jpog_gui(gui, gui_file, locale, shot, frames) : terrain ? jpog_terrain(terrain, shot, frames) : jpog_view(view, keys, materials, anim, shot, frames);
+        int rc = park ? jpog_park(shot, frames) : movie ? jpog_movie(movie, shot, frames) : gui ? jpog_gui(gui, gui_file, locale, shot, frames) : terrain ? jpog_terrain(terrain, shot, frames) : jpog_view(view, keys, materials, anim, shot, frames);
         hle_exit(rc);
     }
     int failed = jpog_selftest();

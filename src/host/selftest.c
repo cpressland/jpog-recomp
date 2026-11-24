@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #include "win32hle.h"
@@ -201,6 +202,91 @@ static void test_toshi(void) {
     hle_scratch_release(mark);
 }
 
+/* ---- a program's start and end: what MSVC's start-up code calls -------------- */
+static char g_order[32];
+static int g_pipe = -1;
+static void said(char c) { size_t n = strlen(g_order); if (n < sizeof g_order - 1) g_order[n] = c; if (g_pipe >= 0) (void)!write(g_pipe, &c, 1); }
+static void t_a(void) { said('a'); RET(0, 0); }
+static void t_b(void) { said('b'); RET(0, 0); }
+static void t_c(void) {                      /* a constructor that registers its destructor, as they do */
+    said('c');
+    hle_call_guest(hle_resolve("_onexit"), 1, (uint32_t[]){ hle_resolve("jpog_selftest_b") });
+    RET(0, 0);
+}
+static const win32hle_shim t_start[] = { { "jpog_selftest_a", t_a }, { "jpog_selftest_b", t_b }, { "jpog_selftest_c", t_c }, { NULL, NULL } };
+
+static void test_start(void) {
+    uint32_t mark = hle_scratch_mark(), t = hle_scratch(24), argc = hle_scratch(4), argv = hle_scratch(4), env = hle_scratch(4), si = hle_scratch(8);
+    char b[64];
+    win32hle_register(t_start);
+    /* the constructors, in order, the gaps passed over */
+    const uint32_t table[6] = { 0, hle_resolve("jpog_selftest_a"), 0, hle_resolve("jpog_selftest_b"), hle_resolve("jpog_selftest_a"), 0 };
+    for (uint32_t i = 0; i < 6; i++) MEM32(t + 4 * i) = table[i];
+    crt("_initterm", 2, (uint32_t[]){ t, t + 24 });
+    check(!strcmp(g_order, "aba"), "_initterm", g_order);
+    crt("_initterm", 2, (uint32_t[]){ t, t });
+    check(!strcmp(g_order, "aba"), "_initterm of none", g_order);
+    memset(g_order, 0, sizeof g_order);
+    /* main's arguments */
+    MEM32(si) = 0;
+    check(crt("__getmainargs", 5, (uint32_t[]){ argc, argv, env, 0, si }) == 0 && MEM32(argc) == 1, "__getmainargs", "failed");
+    const char *a0 = MEM32(argc) ? (const char *)hle_ptr(MEM32(MEM32(argv))) : "";
+    check(!strcmp(a0, "C:\\SimJP.exe"), "argv[0]", a0);
+    check(MEM32(argc) && MEM32(MEM32(argv) + 4 * MEM32(argc)) == 0, "argv ends", "it does not");
+    check(MEM32(env) && MEM32(MEM32(env)) == 0, "an environment", "none");
+    crt("__set_app_type", 1, (uint32_t[]){ 2 });
+    crt("__setusermatherr", 1, (uint32_t[]){ hle_resolve("jpog_selftest_a") });
+    uint32_t v[3] = { crt("__p__fmode", 0, NULL), crt("__p__commode", 0, NULL), crt("__p___initenv", 0, NULL) };
+    check(v[0] && v[1] && v[2] && v[0] != v[1] && v[1] != v[2], "the start-up's variables", "the same, or none");
+    MEM32(v[0]) = 0x4000;
+    check(MEM32(crt("__p__fmode", 0, NULL)) == 0x4000, "_fmode is kept", "not");
+    MEM32(v[0]) = 0;
+    check(jpog_msvcrt_data("_adjust_fdiv") && MEM32(jpog_msvcrt_data("_adjust_fdiv")) == 0, "_adjust_fdiv", "a bad divider");
+    /* the FPU: the start-up sets 53 bits; what was is said, and put back */
+    uint32_t was = crt("_controlfp", 2, (uint32_t[]){ 0, 0 });
+    uint32_t now = crt("_controlfp", 2, (uint32_t[]){ 0x10000, 0x30000 });
+    snprintf(b, sizeof b, "%X", now);
+    check((now & 0x30000) == 0x10000, "_controlfp, 53 bits", b);
+    crt("_controlfp", 2, (uint32_t[]){ was, 0xFFFFF });
+    snprintf(b, sizeof b, "%X, not %X", crt("_controlfp", 2, (uint32_t[]){ 0, 0 }), was);
+    check(crt("_controlfp", 2, (uint32_t[]){ 0, 0 }) == was, "_controlfp put back", b);
+    check(crt("_XcptFilter", 2, (uint32_t[]){ 0xC0000005u, 0 }) == 0, "_XcptFilter passes a fault on", "it did not");
+    /* exit: what _onexit was given, last first, then the code; in a process of its own */
+    int fd[2], status = 0;
+    char got[16] = { 0 };
+    if (pipe(fd) == 0) {
+        pid_t pid = fork();
+        if (pid == 0) {
+            g_pipe = fd[1];
+            crt("_onexit", 1, (uint32_t[]){ hle_resolve("jpog_selftest_a") });
+            MEM32(t) = hle_resolve("jpog_selftest_c");
+            crt("_initterm", 2, (uint32_t[]){ t, t + 4 });
+            crt("exit", 1, (uint32_t[]){ 7 });
+            _exit(99);
+        }
+        close(fd[1]);
+        waitpid(pid, &status, 0);
+        (void)!read(fd[0], got, sizeof got - 1);
+        close(fd[0]);
+        check(!strcmp(got, "cba"), "exit runs what _onexit was given", got);
+        snprintf(b, sizeof b, "%d", WIFEXITED(status) ? WEXITSTATUS(status) : -1);
+        check(WIFEXITED(status) && WEXITSTATUS(status) == 7, "exit's code", b);
+    }
+    /* what SimJP.exe asks of Windows as it starts, and little else does */
+    check(crt("GetPriorityClass", 1, (uint32_t[]){ 0xFFFFFFFFu }) == 0x20, "GetPriorityClass", "not normal");
+    check(crt("SetThreadPriorityBoost", 2, (uint32_t[]){ 0xFFFFFFFEu, 1 }) == 1, "SetThreadPriorityBoost", "refused");
+    uint32_t tok = hle_scratch(4), luid = hle_scratch(8);
+    check(crt("OpenProcessToken", 3, (uint32_t[]){ 0xFFFFFFFFu, 0x28, tok }) == 1 && MEM32(tok), "OpenProcessToken", "none");
+    check(crt("LookupPrivilegeValueA", 3, (uint32_t[]){ 0, S("SeShutdownPrivilege"), luid }) == 1, "LookupPrivilegeValueA", "none");
+    check(crt("AdjustTokenPrivileges", 6, (uint32_t[]){ MEM32(tok), 0, t, 0, 0, 0 }) == 1 && crt("GetLastError", 0, NULL) == 1300, "AdjustTokenPrivileges", "granted");
+    check(crt("CloseHandle", 1, (uint32_t[]){ MEM32(tok) }) == 1, "a token closes", "it does not");
+    check(crt("LoadCursorFromFileA", 1, (uint32_t[]){ S("C:\\None.ani") }) != 0 && crt("CopyImage", 5, (uint32_t[]){ 77, 2, 0, 0, 0 }) == 77 &&
+          crt("SetSystemCursor", 2, (uint32_t[]){ 77, 32512 }) == 1, "cursors", "not");
+    check(crt("SetStretchBltMode", 2, (uint32_t[]){ 0, 3 }) == 1 && crt("SetStretchBltMode", 2, (uint32_t[]){ 0, 1 }) == 3 &&
+          crt("RectVisible", 2, (uint32_t[]){ 0, t }) == 1, "GDI's modes", "not");
+    hle_scratch_release(mark);
+}
+
 /* ---- the registry: pcrecomp's, seeded and kept as the game has it ------------ */
 static uint32_t query(uint32_t key, const char *name, uint32_t type, uint32_t data, uint32_t size) {
     return crt("RegQueryValueExA", 6, (uint32_t[]){ key, S(name), 0, type, data, size });
@@ -263,6 +349,7 @@ static void test_registry(void) {
 int jpog_selftest(void) {
     mach_enter();
     test_msvcrt();
+    test_start();
     test_registry();
     mach_leave();
     test_libmmd();

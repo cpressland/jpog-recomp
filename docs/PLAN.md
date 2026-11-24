@@ -304,6 +304,13 @@ value the installer writes (the MSI's Registry table: `HKLM\SOFTWARE\BTS\JP`
 game runs (`--run`). `--selftest` checks it (15 checks): the ways the game opens
 keys, sizes, and that numbers, text and bytes are read back.
 
+**Start-up (2026-11-24).** What MSVC 6's start-up calls is checked without the
+game (22 checks): `_initterm` in order and past nulls, `__getmainargs`, `argv`
+and the environment, `_controlfp`, `_XcptFilter`, `exit` running `_onexit`'s.
+The exe's imports, compared with what is answered, lacked ten Windows calls
+(`OpenProcessToken`, `CopyImage`, `SetStretchBltMode` and such): now in
+`shims.c`. By name, then, every import of `SimJP.exe` has an answer.
+
 Not yet: the game's own entry. `src/host/game.c` (`--run`) goes straight to its
 main, past the C runtime's start-up, so `SimJP.exe`'s global objects are not
 constructed, and it makes `TApplication` where the game's object is its own
@@ -475,6 +482,24 @@ scaled; the loop's second round is its first.
 - Not answered: movies by file handle, YUV surfaces, several sound tracks
   (the first is played). A build with no ffmpeg shows no pictures; the app's
   needs its Bink and its demuxer, as stl-recomp's has.
+
+**A park, without the game (2026-11-24).** `jpog --park` (`src/host/park.c`)
+runs together what was checked one at a time: an island with its sky, sea and
+grass, 12 walking dinosaurs of six kinds, 63 trees and buildings, the HUD with
+its mouse in a viewport of its own over the world's, music, ambience and 3D
+calls heard from the camera. The ground is drawn by listeners on the viewport's
+own render events, as the game must. 60 a second on an M1 Pro, ready in 1.4
+seconds; 150 seconds of it takes no more memory (153 MB); Metal's API and shader
+validation say nothing. `tools/test/park.py`: 25 runs. Nothing decides anything
+in it: the paths are circles, the figures the dialogs' own samples.
+
+- Nothing of the host's broke when the parts ran together. The bugs found were
+  the demo's own (below).
+- Models look back the way they are turned: a heading of 0 faces -z, so the
+  demo adds half a turn.
+- The pointer doubles moves of more than 6 counts a frame: the engine's own
+  `TGUIScreen::ApplyPointerAccel`, as Windows' was. On a Mac that is on top of
+  the system's acceleration; to be judged by hand when the game runs.
 
 ### Phase 7 — the app (about a week: STL's)
 - `app/` from STL: `Jurassic Park Operation Genesis.app`, **Download and
