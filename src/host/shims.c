@@ -74,6 +74,81 @@ static void g_ExtTextOutA(void) {      /* (dc, x, y, options, rect, text, n, dx)
     uint32_t r = A32(6) ? hle_call_guest(hle_resolve("TextOutA"), 5, args) : 1;
     RET(r, 8);
 }
+
+/* GetDriveTypeA - return CDROM for drive D: */
+static void k_GetDriveTypeA(void) {
+    const char *path = ASTR(0);
+    if (jpog_verbose) {
+        fprintf(stderr, "[shim] GetDriveTypeA: path=%s\n", path ? path : "(null)");
+    }
+    if (path && path[0] && (path[0] == 'D' || path[0] == 'd')) {
+        if (jpog_verbose) {
+            fprintf(stderr, "[shim] GetDriveTypeA: returning DRIVE_CDROM (5)\n");
+        }
+        RET(5, 1);  /* DRIVE_CDROM */
+    }
+    /* Fall through to default implementation */
+    hle_own(win32hle_kernel32_ext, "GetDriveTypeA")();
+}
+
+/* GetVolumeInformationA - return volume label "JPOG" for drive D: */
+static void k_GetVolumeInformationA(void) {
+    const char *path = ASTR(0);
+    uint32_t volume_name = A32(1);
+    uint32_t volume_name_size = A32(2);
+    
+    if (jpog_verbose) {
+        fprintf(stderr, "[shim] GetVolumeInformationA: path=%s\n", path ? path : "(null)");
+    }
+    
+    if (path && path[0] && (path[0] == 'D' || path[0] == 'd')) {
+        /* Return volume label "JPOG" */
+        if (volume_name && volume_name_size > 0) {
+            const char *label = "JPOG";
+            uint32_t len = strlen(label);
+            if (len >= volume_name_size) len = volume_name_size - 1;
+            memcpy(hle_ptr(volume_name), label, len);
+            ((char *)hle_ptr(volume_name))[len] = '\0';
+            if (jpog_verbose) {
+                fprintf(stderr, "[shim] GetVolumeInformationA: returning label 'JPOG'\n");
+            }
+        }
+        RET(1, 8);  /* Success */
+    }
+    /* Fall through to default implementation */
+    hle_own(win32hle_kernel32_ext, "GetVolumeInformationA")();
+}
+
+/* GetLogicalDriveStringsA - include D: as a CDROM drive */
+static void k_GetLogicalDriveStringsA(void) {
+    uint32_t buffer_size = A32(0);
+    uint32_t buffer = A32(1);
+    
+    if (jpog_verbose) {
+        fprintf(stderr, "[shim] GetLogicalDriveStringsA: buffer_size=%u\n", buffer_size);
+    }
+    
+    /* Return C:\ and D:\ as available drives */
+    const char *drives = "C:\\\0D:\\\0";
+    uint32_t len = 8;  /* "C:\\\0D:\\\0" */
+    
+    if (buffer && buffer_size >= len) {
+        memcpy(hle_ptr(buffer), drives, len);
+        RET(len, 2);  /* Return length including null terminators */
+    } else {
+        RET(len, 2);  /* Return required size */
+    }
+}
+
+/* CreateFileA - trace file opens for debugging */
+static void k_CreateFileA(void) {
+    const char *filename = ASTR(0);
+    if (filename && filename[0] == 'D' && jpog_verbose) {
+        fprintf(stderr, "[shim] CreateFileA: %s\n", filename);
+    }
+    hle_own(win32hle_kernel32_ext, "CreateFileA")();
+}
+
 const win32hle_shim jpog_shims[] = {
     { "LoadLibraryA", k_LoadLibraryA }, { "GetProcAddress", k_GetProcAddress }, { "FreeLibrary", k_FreeLibrary },
     { "DisableThreadLibraryCalls", k_DisableThreadLibraryCalls },
@@ -83,5 +158,8 @@ const win32hle_shim jpog_shims[] = {
     { "SuspendThread", k_SuspendThread }, { "TerminateThread", k_TerminateThread },
     { "CreateAcceleratorTableA", u_CreateAcceleratorTableA }, { "DestroyAcceleratorTable", u_DestroyAcceleratorTable },
     { "UnregisterClassA", u_UnregisterClassA }, { "SetMapMode", g_SetMapMode }, { "ExtTextOutA", g_ExtTextOutA },
+    { "GetDriveTypeA", k_GetDriveTypeA }, { "GetVolumeInformationA", k_GetVolumeInformationA },
+    { "GetLogicalDriveStringsA", k_GetLogicalDriveStringsA },
+    { "CreateFileA", k_CreateFileA },
     { NULL, NULL }
 };

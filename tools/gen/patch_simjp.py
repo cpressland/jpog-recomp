@@ -136,6 +136,39 @@ def patch(game, work):
         if patched_refs_3 > 0:
             print(f'Patched {patched_refs_3} references to .idata -> stub at 0x{stub_va_3:08X}')
     
+    # Now patch the original IAT (at 0x739000) to match the PE's import directory
+    # This must happen after patching .idata references, otherwise they get overwritten
+    # The original IAT contains placeholder values that need to be replaced with
+    # the addresses from the PE's import directory, so the loader can resolve them
+    
+    # Build a map of (dll, name) -> IAT slot in PE's import directory
+    pe_full = pefile.PE(data=bytes(data))
+    pe_iat_map = {}
+    if hasattr(pe_full, 'DIRECTORY_ENTRY_IMPORT'):
+        for entry in pe_full.DIRECTORY_ENTRY_IMPORT:
+            dll = entry.dll.decode().lower()
+            for imp in entry.imports:
+                if imp.name:
+                    name = imp.name.decode()
+                    pe_iat_map[(dll, name)] = imp.address
+    
+    # Patch each original IAT slot to point to the corresponding PE import directory entry
+    patched_iat = 0
+    for slot_str, (dll, name) in survey['iat'].items():
+        slot = int(slot_str, 16)
+        rva = slot - base
+        offset = pe.get_offset_from_rva(rva)
+        
+        # Find the corresponding PE import directory entry
+        key = (dll.lower(), name)
+        if key in pe_iat_map:
+            pe_slot = pe_iat_map[key]
+            # Patch the original IAT slot to contain the PE import directory slot address
+            struct.pack_into('<I', data, offset, pe_slot)
+            patched_iat += 1
+    
+    print(f'Patched {patched_iat} original IAT slots to point to PE import directory')
+    
     # Write the patched PE
     patched_path = os.path.join(out_dir, 'SimJP.exe')
     with open(patched_path, 'wb') as f:

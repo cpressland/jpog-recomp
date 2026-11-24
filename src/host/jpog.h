@@ -69,3 +69,6 @@ void jpog_write_bmp(const char *path, const uint8_t *bgra, uint32_t w, uint32_t 
 extern const win32hle_shim jpog_d3d8_shims[];                       /* d3d8.c */
 extern const win32hle_shim jpog_msvcrt_shims[];                     /* msvcrt.c */
 extern const win32hle_shim jpog_shims[];                            /* shims.c */
+extern const win32hle_shim jpog_registry_shims[];                   /* registry.c */
+
+int jpog_run_game(void);                                            /* game.c: run SimJP.exe */

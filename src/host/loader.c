@@ -208,15 +208,62 @@ static void bind_module(jpog_module *m) {
                 m->file, lifted, shims, stubs, m->missing);
 }
 
+/* For SimJP.exe, also patch the original IAT (at 0x739000) to match the resolved PE IAT.
+ * The original IAT slots contain addresses of PE IAT slots, which we now resolve to
+ * actual function addresses. We need to update the original IAT to contain those addresses. */
+static void patch_original_iat(jpog_module *m) {
+    if (!m->is_exe) return;  /* Only for SimJP.exe */
+    
+    /* The original IAT is at 0x739000 and has 1108 entries */
+    uint32_t original_iat_base = 0x739000;
+    uint32_t original_iat_count = 1108;
+    
+    /* For each entry in the original IAT, check if it points to a PE IAT slot */
+    for (uint32_t i = 0; i < original_iat_count; i++) {
+        uint32_t *orig_slot = (uint32_t *)hle_ptr(original_iat_base + i * 4);
+        uint32_t pe_iat_slot = *orig_slot;
+        
+        /* Check if this looks like a PE IAT slot address (in the 0x00E0XXXX range) */
+        if (pe_iat_slot >= 0x00E0E000 && pe_iat_slot < 0x00E10000) {
+            /* Read the resolved function address from the PE IAT slot */
+            uint32_t func_addr = *(uint32_t *)hle_ptr(pe_iat_slot);
+            /* Update the original IAT slot to contain the function address */
+            *orig_slot = func_addr;
+        }
+    }
+    
+    if (jpog_verbose)
+        fprintf(stderr, "[loader] %s: patched original IAT at 0x%08X\n", m->file, original_iat_base);
+}
+
 int jpog_load(const char *game) {
     static const struct { const char *file; uint32_t base, entry, stamp; int on_demand; } want[] = JPOG_MODULES;
     for (size_t i = 0; i < sizeof want / sizeof want[0]; i++) {
         jpog_module *m = &g_jpog_mod[g_jpog_nmod];
         char guest[300], host[4096];
         snprintf(guest, sizeof guest, "C:\\%s", want[i].file);
-        if (!hle_host_path(guest, host, sizeof host)) {
-            fprintf(stderr, "[loader] no %s in %s\n", want[i].file, game);
-            return 1;
+        
+        /* For SimJP.exe, use the patched version from analysis folder if it exists */
+        if (strcasecmp(want[i].file, "SimJP.exe") == 0) {
+            const char *patched = "work/analysis/simjp/SimJP.exe";
+            FILE *test = fopen(patched, "rb");
+            if (test) {
+                fclose(test);
+                strncpy(host, patched, sizeof(host) - 1);
+                host[sizeof(host) - 1] = '\0';
+                if (jpog_verbose)
+                    fprintf(stderr, "[loader] using patched SimJP.exe from %s\n", patched);
+            } else {
+                if (!hle_host_path(guest, host, sizeof host)) {
+                    fprintf(stderr, "[loader] no %s in %s\n", want[i].file, game);
+                    return 1;
+                }
+            }
+        } else {
+            if (!hle_host_path(guest, host, sizeof host)) {
+                fprintf(stderr, "[loader] no %s in %s\n", want[i].file, game);
+                return 1;
+            }
         }
         if (map_at(host, want[i].base, &m->img) != 0) return 1;
         if (m->img.stamp != want[i].stamp) {
@@ -235,7 +282,10 @@ int jpog_load(const char *game) {
             fprintf(stderr, "[loader] %-24s 0x%08X-0x%08X entry 0x%08X\n", m->file, m->img.base,
                     m->img.base + m->img.span, m->img.entry);
     }
-    for (int i = 0; i < g_jpog_nmod; i++) bind_module(&g_jpog_mod[i]);
+    for (int i = 0; i < g_jpog_nmod; i++) {
+        bind_module(&g_jpog_mod[i]);
+        patch_original_iat(&g_jpog_mod[i]);
+    }
     return 0;
 }
 
