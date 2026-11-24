@@ -298,7 +298,16 @@ Toshi's `TMatrix44::Invert`. What it took:
 - `SuspendThread` and `TerminateThread` fail: a guest thread is a host one
   under the machine lock. To watch, when the engine's threads run.
 
-Not yet: the drives and registry, and the game's own entry.
+**The registry (2026-11-24)** is pcrecomp's (`advapi32.c`), seeded with the one
+value the installer writes (the MSI's Registry table: `HKLM\SOFTWARE\BTS\JP`
+`InstallDir`), and kept in `User/registry.txt` beside the game folder when the
+game runs (`--run`). `--selftest` checks it (15 checks): the ways the game opens
+keys, sizes, and that numbers, text and bytes are read back.
+
+Not yet: the game's own entry. `src/host/game.c` (`--run`) goes straight to its
+main, past the C runtime's start-up, so `SimJP.exe`'s global objects are not
+constructed, and it makes `TApplication` where the game's object is its own
+`AApplication` (the base's `OnUpdate` does nothing, so the loop is empty).
 
 ### Phase 5 — Direct3D 8 on Metal (the bulk: 4–8 weeks)
 1. `IDirect3D8`: one adapter, caps of a 2003 DX8.1 card (GeForce 4 Ti /

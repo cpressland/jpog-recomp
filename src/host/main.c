@@ -14,6 +14,7 @@
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <sys/stat.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -52,6 +53,21 @@ static void on_fault(int sig, siginfo_t *si, void *uc) {
         snprintf(why, sizeof why, "fault: signal %d, host address %p", sig, si->si_addr);
     report(why);
     _exit(3);
+}
+
+/* What the installer leaves in the registry (the MSI's Registry table: one
+ * value). The game folder is drive C:. The registry itself is pcrecomp's. */
+static void seed_registry(void) {
+    hle_reg_set_string(0x80000002u, "SOFTWARE\\BTS\\JP", "InstallDir", "C:\\");   /* HKEY_LOCAL_MACHINE */
+}
+/* What the game writes there it finds again: User/registry.txt, beside the
+ * game folder. */
+static void keep_registry(const char *game) {
+    static char file[PATH_MAX + 32];
+    snprintf(file, sizeof file, "%s/../User", game);
+    mkdir(file, 0755);
+    snprintf(file, sizeof file, "%s/../User/registry.txt", game);
+    hle_reg_load(file);
 }
 
 __attribute__((visibility("default"))) int jpog_main(int argc, char **argv) {
@@ -120,7 +136,6 @@ __attribute__((visibility("default"))) int jpog_main(int argc, char **argv) {
     win32hle_register(jpog_fsound_shims);
     win32hle_register(jpog_bink_shims);
     win32hle_register(jpog_msvcrt_shims);
-    win32hle_register(jpog_registry_shims);
     win32hle_register(win32hle_eh32);
     recomp_host_init();
     hle_set_drive('C', full);
@@ -137,6 +152,7 @@ __attribute__((visibility("default"))) int jpog_main(int argc, char **argv) {
     }
     
     hle_set_command_line("\"C:\\SimJP.exe\"");
+    seed_registry();
     /* The modules, before anything allocates: the heap is placed above them. */
     if (jpog_load(full) != 0) return 1;
     printf(JPOG_TITLE " recomp host: %u lifted functions, %d modules, %d imports not implemented yet%s\n",
@@ -152,6 +168,7 @@ __attribute__((visibility("default"))) int jpog_main(int argc, char **argv) {
     fflush(stdout);
     if (run) {
         jpog_headless = headless;
+        keep_registry(full);
         if (hle_screen_open(JPOG_TITLE, !windowed, headless) != 0) return 1;
         int rc = jpog_run_game();
         hle_exit(rc);

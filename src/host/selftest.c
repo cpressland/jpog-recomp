@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "win32hle.h"
 #include "jpog.h"
@@ -200,9 +201,69 @@ static void test_toshi(void) {
     hle_scratch_release(mark);
 }
 
+/* ---- the registry: pcrecomp's, seeded and kept as the game has it ------------ */
+static uint32_t query(uint32_t key, const char *name, uint32_t type, uint32_t data, uint32_t size) {
+    return crt("RegQueryValueExA", 6, (uint32_t[]){ key, S(name), 0, type, data, size });
+}
+static void test_registry(void) {
+    uint32_t mark = hle_scratch_mark(), out = hle_scratch(4), type = hle_scratch(4), size = hle_scratch(4), buf = hle_scratch(64), jp, jp2;
+    const uint32_t HKLM = 0x80000002u, HKCU = 0x80000001u;
+    char num[32], path[] = "/tmp/jpog-registry-XXXXXX";
+    /* each way the game opens a key, a key's own subkey, whatever the case */
+    check(crt("RegOpenKeyExA", 5, (uint32_t[]){ HKLM, S("Software\\BTS\\JP"), 0, 0x20019, out }) == 0, "registry: RegOpenKeyExA", "failed");
+    jp = MEM32(out);
+    check(crt("RegOpenKeyA", 3, (uint32_t[]){ HKLM, S("SOFTWARE\\BTS"), out }) == 0, "registry: RegOpenKeyA", "failed");
+    uint32_t bts = MEM32(out);
+    check(crt("RegOpenKeyExA", 5, (uint32_t[]){ bts, S("jp"), 0, 0x20019, out }) == 0, "registry: a key of a key's", "failed");
+    jp2 = MEM32(out);
+    MEM32(size) = 64;
+    check(crt("RegEnumKeyExA", 8, (uint32_t[]){ bts, 0, buf, size, 0, 0, 0, 0 }) == 0 && !strcmp((char *)hle_ptr(buf), "JP"), "registry: RegEnumKeyExA", (char *)hle_ptr(buf));
+    check(crt("RegOpenKeyExA", 5, (uint32_t[]){ HKCU, S("Software\\Nothing"), 0, 0x20019, out }) == 2, "registry: a key that is not there", "opened");
+    /* the installer's value: how large, too large, and it */
+    MEM32(size) = 0;
+    check(query(jp, "InstallDir", type, 0, size) == 0 && MEM32(size) == 4 && MEM32(type) == 1, "registry: how large a value is", "wrong");
+    MEM32(size) = 2;
+    check(query(jp, "InstallDir", type, buf, size) == 234 && MEM32(size) == 4, "registry: too small a buffer", "taken");
+    MEM32(size) = 64;
+    check(query(jp2, "installdir", type, buf, size) == 0 && !strcmp((char *)hle_ptr(buf), "C:\\"), "registry: the installer's value", (char *)hle_ptr(buf));
+    check(query(jp, "Nothing", type, buf, size) == 2, "registry: a value that is not there", "found");
+    /* what is written is kept, whatever its kind, and read back by another run */
+    int fd = mkstemp(path);
+    if (fd >= 0) close(fd);
+    hle_reg_load(path);
+    uint32_t number = hle_scratch(4), bytes = hle_scratch_copy("\1\0\377\"", 4);
+    MEM32(number) = 305419896;
+    crt("RegSetValueExA", 6, (uint32_t[]){ jp, S("Number"), 0, 4, number, 4 });
+    crt("RegSetValueExA", 6, (uint32_t[]){ jp, S("Text"), 0, 1, S("a \"b\"\\c=d:e"), 12 });
+    crt("RegSetValueExA", 6, (uint32_t[]){ jp, S("Bytes"), 0, 3, bytes, 4 });
+    for (int i = 0; i < 3; i++) {            /* gone from memory; the file before that is put back */
+        static const char *const n[] = { "Number", "Text", "Bytes" };
+        char keep[4096];
+        FILE *f = fopen(path, "rb");
+        size_t len = f ? fread(keep, 1, sizeof keep, f) : 0;
+        if (f) fclose(f);
+        crt("RegDeleteValueA", 2, (uint32_t[]){ jp, S(n[i]) });
+        if ((f = fopen(path, "wb"))) { fwrite(keep, 1, len, f); fclose(f); }
+    }
+    check(query(jp, "Number", type, buf, size) == 2, "registry: a value deleted", "found");
+    hle_reg_load(path);
+    MEM32(size) = 64;
+    snprintf(num, sizeof num, "%u", query(jp, "Number", type, buf, size) == 0 ? MEM32(buf) : 0);
+    check(MEM32(buf) == 305419896 && MEM32(type) == 4, "registry: a number kept", num);
+    MEM32(size) = 64;
+    check(query(jp, "Text", type, buf, size) == 0 && !strcmp((char *)hle_ptr(buf), "a \"b\"\\c=d:e"), "registry: text kept", (char *)hle_ptr(buf));
+    MEM32(size) = 64;
+    check(query(jp, "Bytes", type, buf, size) == 0 && MEM32(size) == 4 && !memcmp(hle_ptr(buf), "\1\0\377\"", 4) && MEM32(type) == 3, "registry: bytes kept", "not");
+    check(crt("RegCloseKey", 1, &jp) == 0 && crt("RegCloseKey", 1, &jp2) == 0 && crt("RegCloseKey", 1, &bts) == 0, "registry: RegCloseKey", "failed");
+    check(query(jp, "InstallDir", type, 0, size) != 0, "registry: a closed key", "read");
+    unlink(path);
+    hle_scratch_release(mark);
+}
+
 int jpog_selftest(void) {
     mach_enter();
     test_msvcrt();
+    test_registry();
     mach_leave();
     test_libmmd();
     test_toshi();
