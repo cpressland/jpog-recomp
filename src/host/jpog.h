@@ -39,10 +39,18 @@ void jpog_cpuid(void);                                              /* cpu.c */
 int  jpog_selftest(void);                                           /* selftest.c: how many checks failed */
 void jpog_check(int ok, const char *what, const char *got);
 void jpog_selftest_d3d8(void);                                      /* selftest_d3d8.c */
+uint32_t jpog_call(const char *dll, const char *name, uint32_t self, int n, ...);   /* engine.c: a lifted export */
+uint32_t jpog_engine_kernel(void);
+uint32_t jpog_engine_renderer(uint32_t kernel);
+int  jpog_engine_display(uint32_t renderer, uint32_t w, uint32_t h);
+uint32_t jpog_engine_device(uint32_t renderer);                     /* its IDirect3DDevice8 */
+int  jpog_view(const char *model, const char *keys, const char *materials, int anim, const char *shot, int frames);
 void jpog_selftest_engine(void);                                    /* selftest_engine.c */
 
 void jpog_d3d8_summary(void);                                       /* d3d8.c: the Direct3D 8 calls made, at exit */
 int  jpog_d3d8_shot(const char *path);                              /* the back buffer as a BMP */
+
+void jpog_write_bmp(const char *path, const uint8_t *bgra, uint32_t w, uint32_t h);
 
 extern const win32hle_shim jpog_d3d8_shims[];                       /* d3d8.c */
 extern const win32hle_shim jpog_msvcrt_shims[];                     /* msvcrt.c */

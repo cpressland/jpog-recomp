@@ -15,8 +15,8 @@ and no installer; the SecuROM wrapper on `SimJP.exe` has been fully resolved
 calls have been mapped back to their original targets. All 20 modules
 (SimJP.exe, 19 DLLs) are lifted to C and compile. The host maps and binds the
 DLLs, runs their start-up, and answers Direct3D 8 on Metal: Toshi's own
-renderer creates its device and presents frames on it (below). There is no
-window yet, and the game itself has not been run on it.
+renderer runs on it, and shows the game's models, animated, in a window
+(below). The game itself has not been run on it.
 
 ## The lift
 
@@ -53,6 +53,17 @@ cmake -S . -B build-dlls -G Ninja -DGEN_DIR=$PWD/work/gen-dlls && cmake --build 
 build-dlls/jpog --game GAME --selftest
 ```
 
+A model, through the engine's own scene, camera, materials and skeleton, with
+no `SimJP.exe` (`src/host/engine.c`; Escape or closing the window ends it):
+
+```
+build-dlls/jpog --game GAME --view Data/Models/Trex_hi.tmd \
+    --materials Data/matlibs/dinos_judithriver_b.tml --anim 3 --windowed
+python3 tools/test/models.py build-dlls/jpog GAME      # all 360, headless: each loads and draws
+```
+
+`--headless --frames N --shot FILE.bmp` keeps the last of N frames;
+`JPOG_VIEW_ZOOM` is how far back, in the model's radii (0.6).
 `JPOG_TEST_SHOTS=DIR` keeps the tests' pictures; `JPOG_SHOT=DIR` every
 `JPOG_SHOT_EVERY`th frame presented, `JPOG_TRACE_FRAME=N` lists frame N's
 draws, `JPOG_CPU=x87` reports a CPU without SSE.

@@ -350,8 +350,26 @@ DLLs and presents frames. Metal's API and shader validation report nothing.
   than 32-bit, indexed vertex blending, the gamma ramp, and vertex buffers
   larger than needed copied whole into the ring when locked. A texture written
   mid-frame changes for that frame's earlier draws too.
-- Next: a window (`jpog_headless` is 1), and a scene through the engine's own
-  models and terrain.
+
+**Models in a window (2026-11-24).** `jpog --view` (`src/host/engine.c`) loads
+a material library, a keyframe library and a `.tmd` through the engine, and
+draws an instance through its scene, viewport and camera: dinosaurs skinned
+and animated, buildings, vehicles, trees. 58 frames a second in a window
+(held to the display), about 8,000 headless, at 44 MB however long it runs.
+`tools/test/models.py` draws all 360 models: 352 do; the other 8 are listed
+there with why.
+
+- The world's y points down; models are z up, and whoever makes an instance
+  stands it up. A model's header names its keyframe library.
+- `HuntPlat.tmd` and `STurret.tmd` have an older skeleton layout: the original
+  x86 code faults on them too. `HuntPlat.ini` names the first, so what the
+  game does with it is worth a look when it runs.
+- A mesh of 28 bones (`Carcha.tmd`) runs over the skin shader's c88, the fade:
+  the engine's own doing.
+- Wrong arguments fault as they would on Windows: an animation index the model
+  has not got, for one.
+- Next: terrain, sky and water (TTerrainShader), sprites and the GUI; FMOD;
+  then the game's own entry.
 
 ### Phase 6 — sound, movies, input (1–2 weeks, alongside 5)
 - FMOD 3 lifted on win32hle's DirectSound 3D. Fallback: an HLE of the 41

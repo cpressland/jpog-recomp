@@ -538,7 +538,7 @@ M(v_Reset) {
     RET(D3D_OK, 2);
 }
 
-static void write_bmp(const char *path, const uint8_t *px, uint32_t w, uint32_t h) {
+void jpog_write_bmp(const char *path, const uint8_t *px, uint32_t w, uint32_t h) {
     FILE *f = fopen(path, "wb");
     if (!f) return;
     uint32_t row = w * 3 + (4 - (w * 3) % 4) % 4, size = 54 + row * h;
@@ -561,7 +561,7 @@ int jpog_d3d8_shot(const char *path) {       /* the back buffer, as a BMP */
     if (!gpu_pixels(d, d->backbuffer, NULL, &w, &h)) return 0;
     uint8_t *px = malloc((size_t)w * h * 4);
     int ok = gpu_pixels(d, d->backbuffer, px, &w, &h);
-    if (ok) write_bmp(path, px, w, h);
+    if (ok) jpog_write_bmp(path, px, w, h);
     free(px);
     return ok;
 }

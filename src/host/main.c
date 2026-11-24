@@ -56,17 +56,34 @@ static void on_fault(int sig, siginfo_t *si, void *uc) {
 
 __attribute__((visibility("default"))) int jpog_main(int argc, char **argv) {
     const char *game = "game";
-    int selftest = 0;
+    const char *view = NULL, *keys = NULL, *materials = NULL, *shot = NULL;
+    int selftest = 0, anim = -1, frames = 0, windowed = 0, headless = 0;
     setvbuf(stderr, NULL, _IONBF, 0);
     for (int i = 1; i < argc; i++) {
         if (!strcmp(argv[i], "--game") && i + 1 < argc) game = argv[++i];
         else if (!strcmp(argv[i], "--selftest")) selftest = 1;
+        else if (!strcmp(argv[i], "--view") && i + 1 < argc) view = argv[++i];
+        else if (!strcmp(argv[i], "--keys") && i + 1 < argc) keys = argv[++i];
+        else if (!strcmp(argv[i], "--materials") && i + 1 < argc) materials = argv[++i];
+        else if (!strcmp(argv[i], "--anim") && i + 1 < argc) anim = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--frames") && i + 1 < argc) frames = atoi(argv[++i]);
+        else if (!strcmp(argv[i], "--shot") && i + 1 < argc) {
+            static char path[PATH_MAX * 2];  /* absolute: the host goes to the game folder */
+            const char *s = argv[++i];
+            if (s[0] != '/' && getcwd(path, sizeof path)) snprintf(path + strlen(path), sizeof path - strlen(path), "/%s", s);
+            else snprintf(path, sizeof path, "%s", s);
+            shot = path;
+        }
+        else if (!strcmp(argv[i], "--headless")) headless = 1;
+        else if (!strcmp(argv[i], "--windowed")) windowed = 1;
         else if (!strcmp(argv[i], "--verbose")) jpog_verbose = 1;
         else if (!strcmp(argv[i], "--trace")) win32hle_trace = 1;
         else {
-            printf("usage: jpog [--game DIR] [--selftest] [--verbose] [--trace]\n"
+            printf("usage: jpog [--game DIR] [--selftest | --view MODEL.tmd] [--verbose] [--trace]\n"
                    "  --game DIR   the game folder (default: game)\n"
                    "  --selftest   attach every DLL and check the host and the lifted code against known answers\n"
+                   "  --view MODEL.tmd [--keys LIB.tkl] [--materials LIB.tml] [--anim N]   a model, through the engine, turning\n"
+                   "               [--headless] [--windowed] [--frames N] [--shot FILE.bmp (the last of N)]\n"
                    "  --verbose    every module, and every stub as it is bound\n"
                    "  --trace      every import call, as it is made\n"
                    "Without --selftest: map and bind the modules, and say what is missing.\n");
@@ -97,13 +114,20 @@ __attribute__((visibility("default"))) int jpog_main(int argc, char **argv) {
     if (jpog_load(full) != 0) return 1;
     printf(JPOG_TITLE " recomp host: %u lifted functions, %d modules, %d imports not implemented yet%s\n",
            recomp_dispatch_count, g_jpog_nmod, g_jpog_stubs, g_jpog_stubs && !jpog_verbose ? " (--verbose lists them)" : "");
-    if (!selftest) return 0;
+    if (!selftest && !view) return 0;
     fflush(stdout);
     if (chdir(full) != 0) { fprintf(stderr, "cannot enter %s\n", full); return 1; }
     int bad = jpog_attach_dlls();
     for (int i = 0; i < g_jpog_nmod; i++)    /* the shader DLLs, as the renderer loads them */
         if (g_jpog_mod[i].on_demand) bad += jpog_load_library(g_jpog_mod[i].file) == 0;
     printf("attached: %d of %d\n", g_jpog_nmod - bad, g_jpog_nmod);
+    fflush(stdout);
+    if (view) {
+        jpog_headless = headless;
+        if (hle_screen_open(JPOG_TITLE, !windowed, headless) != 0) return 1;
+        int rc = jpog_view(view, keys, materials, anim, shot, frames);
+        hle_exit(rc);
+    }
     int failed = jpog_selftest();
     if (jpog_verbose) jpog_d3d8_summary();
     printf("selftest: %s\n", failed ? "FAILED" : "ok");
