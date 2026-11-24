@@ -44,6 +44,11 @@ uint32_t jpog_engine_kernel(void);
 uint32_t jpog_engine_renderer(uint32_t kernel);
 int  jpog_engine_display(uint32_t renderer, uint32_t w, uint32_t h);
 uint32_t jpog_engine_device(uint32_t renderer);                     /* its IDirect3DDevice8 */
+extern const win32hle_shim jpog_fsound_shims[];                     /* fsound.c: fmod.dll */
+extern int jpog_fsound_offline;                                     /* no sound device: the mixer is asked, below */
+void jpog_fsound_render(float *stereo, int frames);
+int  jpog_listen(const char *what);                                 /* a sound or piece of music, or "all" */
+void jpog_selftest_fsound(void);                                    /* selftest_fsound.c */
 int  jpog_gui(const char *dialog, const char *file, const char *locale, const char *shot, int frames);
 int  jpog_terrain(const char *island, const char *shot, int frames);
 int  jpog_view(const char *model, const char *keys, const char *materials, int anim, const char *shot, int frames);

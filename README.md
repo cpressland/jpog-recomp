@@ -38,8 +38,8 @@ compile in about 2 minutes.
 
 ## The host
 
-`src/host` on pcrecomp's `runtime/win32hle`, with SDL2 and SDL2_ttf from
-pkg-config (Homebrew): `loader.c` maps the modules at their bases and binds
+`src/host` on pcrecomp's `runtime/win32hle`, with SDL2, SDL2_ttf and
+libvorbisfile from pkg-config (Homebrew): `loader.c` maps the modules at their bases and binds
 them to each other, `msvcrt.c` is Windows' C runtime (not on the disc),
 `shims.c` the Win32 calls win32hle lacks, `setjmp.c` and `cpu.c` as
 stl-recomp's. Direct3D 8 is `d3d8.c` (the interfaces and state), `dxso.c`
@@ -85,6 +85,16 @@ python3 tools/test/gui.py build-dlls/jpog GAME --locales     # all 134, headless
 The mouse needs `docs/patches/pcrecomp-dinput-axismode.patch` on pcrecomp
 (DirectInput's relative axes); without it the pointer runs away.
 `JPOG_GUI_MOUSE=x,y[,1]` puts the pointer there (and presses) without one.
+
+A sound or a piece of music, through `fmod.dll`'s calls as the host answers
+them (`src/host/fsound.c`; libvorbisfile for the music):
+
+```
+build-dlls/jpog --game GAME --listen Data/Music/Welcome.ogg
+build-dlls/jpog --game GAME --listen all       # all 928, headless, in seconds
+```
+
+`JPOG_WAV=FILE` keeps what is played.
 
 `--headless --frames N --shot FILE.bmp` keeps the last of N frames;
 `JPOG_VIEW_ZOOM` is how far back, in the model's radii (0.6).

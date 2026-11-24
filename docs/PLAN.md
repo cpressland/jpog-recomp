@@ -66,7 +66,7 @@ dinosaurs and buildings) imports back. All DLLs are relocatable and all want
 | `SimJP.exe` | the game, **SecuROM-wrapped** (§1.3) | lift, after the wrapper is undone |
 | 14 `T*`/`P*`/`SimJP*`/`Units` DLLs | Toshi kernel, render, terrain, GUI, input, properties; the game's units | lift, rebased |
 | 5 `Shaders/D3D/*.dll` | materials and their **D3D8 shader bytecode** (vs 1.0/1.1, ps 1.1), loaded with `LoadLibrary` at run time | lift, rebased; attached on load, as STL's missions |
-| `fmod.dll` | FMOD 3.x (`FSOUND_*`, 41 used), **UPX-packed** | unpack (`upx -d` or pcrecomp `emu_unpack.py`), then lift; it sits on DirectSound |
+| `fmod.dll` | FMOD 3.x (`FSOUND_*`, 41 used), **UPX-packed** | answered by the host (`src/host/fsound.c`): not lifted |
 | `libmmd.dll` | Intel's maths library (`sin`, `pow`, ... with SSE2 paths by CPUID) | lift, CPUID answered without SSE2 at first; or bind to the host's libm |
 | `binkw32.dll` | Bink 1 movies (13 calls) | **HLE**: pcrecomp's `bink.c` on ffmpeg, as STL |
 | `msvcrt.dll` | Windows' own VC6 runtime: **not on the disc** | **HLE**: 91 functions in all, none of the C++ library (no msvcp60) |
@@ -265,8 +265,8 @@ no errors, about 2 minutes at `-O2` on a 10-core M-series Mac. Toshi is
 built without MSVC RTTI (it has its own `TClass`), so `rtti.py` seeds
 nothing; the low-coverage modules are small ones where the rest of the code
 range is padding and data, to be checked when they run (unlifted code
-reached at run time names itself). Not yet: fmod (unpacked, its relocation
-not yet confirmed).
+reached at run time names itself). `fmod.dll` is not lifted: the host answers
+it (Phase 6).
 
 ### Phase 4 — boot to a black window (1–2 weeks)
 - `src/host/loader.c` (STL's): map and bind the 22 modules, exe ⇄ Units
@@ -298,8 +298,7 @@ Toshi's `TMatrix44::Invert`. What it took:
 - `SuspendThread` and `TerminateThread` fail: a guest thread is a host one
   under the machine lock. To watch, when the engine's threads run.
 
-Not yet: FMOD, the drives and registry, and the game's own entry. `fmod.dll`'s 41 calls can be answered by the host (SDL
-audio) rather than lifted; see Phase 6's fallback.
+Not yet: the drives and registry, and the game's own entry.
 
 ### Phase 5 — Direct3D 8 on Metal (the bulk: 4–8 weeks)
 1. `IDirect3D8`: one adapter, caps of a 2003 DX8.1 card (GeForce 4 Ti /
@@ -423,17 +422,34 @@ pictures on this disc). Metal's validation reports nothing on the main menu;
   are to be seen when it runs.
 - **pcrecomp**: `dinput.c` has `DIPROPAXISMODE_ABS` and `_REL` the wrong way
   about, so this engine's mouse runs away. The fix is
-  `docs/patches/pcrecomp-dinput-axismode.patch`, for the fork: `app/pcrecomp.lock`'s
-  commit does not have it yet.
-- Next: FMOD; then the game's own entry.
+  `docs/patches/pcrecomp-dinput-axismode.patch`, sent upstream as
+  sp00nznet/pcrecomp 198: `app/pcrecomp.lock`'s commit does not have it yet.
+- Next: the game's own entry.
 
 ### Phase 6 — sound, movies, input (1–2 weeks, alongside 5)
-- FMOD 3 lifted on win32hle's DirectSound 3D. Fallback: an HLE of the 41
-  `FSOUND_*` calls the game makes, on SDL audio (samples, streams for the
-  `.ogg` music, 3D positions), if FMOD's own mixer fights the host.
+- FMOD 3: the 41 `FSOUND_*` calls the game makes, answered by the host on SDL
+  audio (done; below).
 - Bink intro and title movies through `bink.c` (`BinkCopyToBuffer(Rect)`,
   `BinkOpenDirectSound`).
 - DirectInput 8 mouse and keyboard; controller later (Phase 8).
+
+**FMOD answered (2026-11-24).** `src/host/fsound.c` is every call `SimJP.exe`
+imports from `fmod.dll`, on a mixer of its own: samples (every sound of the
+game's is a 16-bit PCM WAV), streams (the music is Ogg Vorbis, by
+libvorbisfile, which the app will have to carry), 2D volume and pan, 3D
+distance, direction and Doppler, priorities, and handles that go stale.
+`jpog --selftest` calls it as the game does and measures what is mixed (56
+checks); `--listen all` plays all 898 sounds and 30 pieces of music through it
+headless, each to its end; a piece played through a device in real time is
+within 2 in 32,768 of ffmpeg's decoding, with no gaps.
+
+- The calls' meanings are FMOD 3's, from its documentation as remembered; no
+  original `fmod.dll` was run to compare. To hear when the game runs: that a mono sound in the
+  middle is half each side, how 3D sounds pan and fall off, the handedness the
+  game gives the listener, and that a stream's end is told from `FSOUND_Update`
+  (FMOD told it from a thread of its own).
+- Not done: reverse loops (`LOOP_BIDI` loops forwards), compressed WAVs, MP3,
+  DSP units, speaker modes; none of the game's files or imports needs them.
 
 ### Phase 7 — the app (about a week: STL's)
 - `app/` from STL: `Jurassic Park Operation Genesis.app`, **Download and
