@@ -44,6 +44,7 @@ uint32_t jpog_engine_kernel(void);
 uint32_t jpog_engine_renderer(uint32_t kernel);
 int  jpog_engine_display(uint32_t renderer, uint32_t w, uint32_t h);
 uint32_t jpog_engine_device(uint32_t renderer);                     /* its IDirect3DDevice8 */
+int  jpog_gui(const char *dialog, const char *file, const char *locale, const char *shot, int frames);
 int  jpog_terrain(const char *island, const char *shot, int frames);
 int  jpog_view(const char *model, const char *keys, const char *materials, int anim, const char *shot, int frames);
 void jpog_selftest_engine(void);                                    /* selftest_engine.c */

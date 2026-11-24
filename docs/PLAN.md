@@ -397,7 +397,35 @@ after 3,000.
   doing, as driven here. What else the game draws into it is to be seen.
 - Direct3D 8 gained `IDirect3DVolume8` and R5G6B5 render targets (kept as
   32-bit; not read back).
-- Next: sprites and the GUI; FMOD; then the game's own entry.
+
+**Sprites, the GUI and input (2026-11-24).** `jpog --gui DIALOG` (`src/host/gui.c`)
+reads `Data/GUI/main.gui` through `TGUIInterface` (1.6 MB in 0.2 s), makes a
+dialog with the game's widgets, styles, fonts and language, and draws it through
+`PGUITRDisplayContext` on the sprite shader; `JPOG_GUI_BACK` draws one of the
+full-screen pictures behind it with the shader itself. The mouse and keyboard
+come through `TInputDXInterface` (DirectInput 8): buttons light as the pointer
+passes and take presses. `tools/test/gui.py` draws all 134 dialogs, three of
+them in six languages (133 pass; `LoadSaveStorage` is an Xbox's, with no
+pictures on this disc). Metal's validation reports nothing on the main menu;
+56 MB after 300 frames and after 3,000.
+
+- What `SimJP.exe` supplies, `gui.c` does: the sprite shader (`SHSPRITE`, made
+  before the display context looks for it; the material libraries' shader 4),
+  each class's static start-up (`TClass::InitialiseStatic`: the GUI's widgets
+  and properties), and subclasses of `TGUISoundFactory`, `TGUIAudioContext`
+  and `TGUIInputContext`, which do nothing yet. `TGUIInputContext` +14 and the
+  sound factory's +10 and +14 have not been called; their arguments are guesses.
+- A viewport's size is -1 until it is set, and the GUI divides by it. A dialog
+  is laid out with `Layout` and then `Pack`, by whoever shows it.
+- The canvas is 640 by 480 here: the dialogs are written for 640 by 480 or by
+  448, and the pictures are 448 tall (drawn stretched). What the game uses on
+  a PC, and whether the main menu's New Island icon stands so far left there,
+  are to be seen when it runs.
+- **pcrecomp**: `dinput.c` has `DIPROPAXISMODE_ABS` and `_REL` the wrong way
+  about, so this engine's mouse runs away. The fix is
+  `docs/patches/pcrecomp-dinput-axismode.patch`, for the fork: `app/pcrecomp.lock`'s
+  commit does not have it yet.
+- Next: FMOD; then the game's own entry.
 
 ### Phase 6 — sound, movies, input (1–2 weeks, alongside 5)
 - FMOD 3 lifted on win32hle's DirectSound 3D. Fallback: an HLE of the 41

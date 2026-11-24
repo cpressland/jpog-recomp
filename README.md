@@ -15,8 +15,8 @@ and no installer; the SecuROM wrapper on `SimJP.exe` has been fully resolved
 calls have been mapped back to their original targets. All 20 modules
 (SimJP.exe, 19 DLLs) are lifted to C and compile. The host maps and binds the
 DLLs, runs their start-up, and answers Direct3D 8 on Metal: Toshi's own
-renderer runs on it, and shows the game's models, animated, and its islands,
-with their sky, sea and grass, in a window (below). The game itself has not been run on it.
+renderer runs on it, and shows the game's models, animated, its islands, with
+their sky, sea and grass, and its menus, in a window (below). The game itself has not been run on it.
 
 ## The lift
 
@@ -44,7 +44,7 @@ them to each other, `msvcrt.c` is Windows' C runtime (not on the disc),
 `shims.c` the Win32 calls win32hle lacks, `setjmp.c` and `cpu.c` as
 stl-recomp's. Direct3D 8 is `d3d8.c` (the interfaces and state), `dxso.c`
 (vs_1_1 and ps_1_1 to Metal's language), `ff.c` (fixed function, likewise)
-and `d3d_metal.m`. Its test needs only the DLLs, lifted to a folder of their own
+and `d3d_metal.m`; `engine.c` and `gui.c` drive the engine. Its test needs only the DLLs, lifted to a folder of their own
 (`--modules` with every module but `simjp`):
 
 ```
@@ -73,6 +73,18 @@ python3 tools/test/terrain.py build-dlls/jpog GAME     # 49 views, headless
 and pitch in radians; `JPOG_WEATHER` one of `Weather.ini`'s (`normal`,
 `heatwave`, `lightrain`, `heavyrain`, `tornado`); `JPOG_TERRAIN_FAR` the far
 plane (150).
+
+A dialog of `Data/GUI/main.gui`, through the game's GUI, with the mouse:
+
+```
+JPOG_GUI_BACK=bkg_fe_menu build-dlls/jpog --game GAME --gui FrontEndMainMenu_WIN --windowed
+build-dlls/jpog --game GAME --gui AParkFinanceDialog --locale German --windowed
+python3 tools/test/gui.py build-dlls/jpog GAME --locales     # all 134, headless
+```
+
+The mouse needs `docs/patches/pcrecomp-dinput-axismode.patch` on pcrecomp
+(DirectInput's relative axes); without it the pointer runs away.
+`JPOG_GUI_MOUSE=x,y[,1]` puts the pointer there (and presses) without one.
 
 `--headless --frames N --shot FILE.bmp` keeps the last of N frames;
 `JPOG_VIEW_ZOOM` is how far back, in the model's radii (0.6).

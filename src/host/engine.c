@@ -15,23 +15,15 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "win32hle.h"
-#include "jpog.h"
 #include "d3d_int.h"
+#include "engine.h"
 
-#define K "TKernelInterface.dll"
-#define R "TRenderInterface.dll"
-#define D "TRenderD3DInterface.dll"
-
-/* An export by its mangled name: thiscall with self in ecx, or stdcall. */
-uint32_t jpog_call(const char *dll, const char *name, uint32_t self, int n, ...) {
-    uint32_t va = jpog_export(dll, name), esp = g_esp, a[16];
+/* Lifted code at va: thiscall with self in ecx, or stdcall. */
+static uint32_t call_va(uint32_t va, const char *what, uint32_t self, int n, va_list ap) {
+    uint32_t esp = g_esp, a[16];
     recomp_func_t f = va ? recomp_lookup(va) : NULL;
-    if (!f) { fprintf(stderr, "[engine] no %s in %s\n", name, dll); return 0; }
-    va_list ap;
-    va_start(ap, n);
+    if (!f) { fprintf(stderr, "[engine] no %s (%08X)\n", what, va); return 0; }
     for (int i = 0; i < n; i++) a[i] = va_arg(ap, uint32_t);
-    va_end(ap);
     for (int i = n - 1; i >= 0; i--) PUSH32(g_esp, a[i]);
     PUSH32(g_esp, RECOMP_RETADDR);
     g_ecx = self;
@@ -39,9 +31,23 @@ uint32_t jpog_call(const char *dll, const char *name, uint32_t self, int n, ...)
     g_esp = esp;
     return g_eax;
 }
-static uint32_t F(float f) { uint32_t u; memcpy(&u, &f, 4); return u; }
-static uint32_t S(const char *s) { return hle_guest_strdup(s); }
-static float rd(uint32_t va) { float f; uint32_t u = MEM32(va); memcpy(&f, &u, 4); return f; }
+/* An export by its mangled name. */
+uint32_t jpog_call(const char *dll, const char *name, uint32_t self, int n, ...) {
+    va_list ap;
+    va_start(ap, n);
+    uint32_t r = call_va(jpog_export(dll, name), name, self, n, ap);
+    va_end(ap);
+    return r;
+}
+uint32_t engine_vcall(uint32_t self, uint32_t offset, int n, ...) {
+    char what[32];
+    va_list ap;
+    snprintf(what, sizeof what, "virtual +%X", offset);
+    va_start(ap, n);
+    uint32_t r = call_va(self ? MEM32(MEM32(self) + offset) : 0, what, self, n, ap);
+    va_end(ap);
+    return r;
+}
 
 uint32_t jpog_engine_kernel(void) {          /* as TApplication::Create makes it */
     uint32_t k = jpog_call(K, "?tmalloc@@YGPAXHPADH@Z", 0, 3, 0x58u, 0u, 0xFFFFFFFFu);
@@ -68,8 +74,7 @@ int jpog_engine_display(uint32_t r, uint32_t w, uint32_t h) {
 uint32_t jpog_engine_device(uint32_t r) {
     return jpog_call(D, "?GetD3DDevice@TRenderD3DInterface@Toshi@@QAEPAUIDirect3DDevice8@@XZ", r, 0);
 }
-enum { SYS_SHSYS = 8, SYS_SHSKIN = 9, SYS_GFXFILES = 16, SYS_SCENE = 17, SYS_TEXTURES = 18 };
-static uint32_t system_resource(uint32_t r, uint32_t which) {
+uint32_t engine_system(uint32_t r, uint32_t which) {
     return jpog_call(R, "?GetSystemResource@TRenderInterface@Toshi@@QAEPAVTResource@2@W4SYSRESOURCES@12@@Z", r, 1, which);
 }
 
@@ -82,7 +87,7 @@ static uint32_t turn(float a, float b) {
 
 /* The guest's messages, as the game's loop takes them; 1 to stop: the window
  * was closed, or Escape. */
-static int pump(void) {
+int engine_pump(void) {
     uint32_t mark = hle_scratch_mark(), m = hle_scratch(28);
     int stop = 0;
     while (hle_call_guest(hle_resolve("PeekMessageA"), 5, (uint32_t[]){ m, 0, 0, 0, 1 })) {
@@ -105,14 +110,30 @@ static void shown(const uint8_t *px, int w, int h, int pitch, int bpp) {
     fprintf(stderr, "[view] the window's frame %d: %dx%d\n", n, w, h);
 }
 
+void engine_window_shot(void) { if (getenv("JPOG_WINDOW_SHOT")) hle_screen_frame_hook = shown; }
+
+void engine_scene(uint32_t scene, float dt) {
+    jpog_call(R, "?Begin@TScene@Toshi@@QAE_NXZ", scene, 0);
+    jpog_call(R, "?Update@TScene@Toshi@@QAE_NM@Z", scene, 1, F(dt));
+    jpog_call(R, "?Render@TScene@Toshi@@QAE_NXZ", scene, 0);
+}
+uint32_t engine_viewport(uint32_t scene, const char *name, uint8_t red, uint8_t green, uint8_t blue) {
+    uint32_t vp = jpog_call(R, "?CreateViewport@TScene@Toshi@@QAEPAVTViewport@2@PBDPAVTResource@2@_N@Z", scene, 3, S(name), 0u, 1u);
+    jpog_call(R, "?SetBackgroundColour@TViewport@Toshi@@QAEXEEEE@Z", vp, 4, red, green, blue, 0xFFu);
+    jpog_call(R, "?AllowBackgroundClear@TViewport@Toshi@@QAE_N_N@Z", vp, 1, 1u);
+    jpog_call(R, "?AllowDepthClear@TViewport@Toshi@@QAE_N_N@Z", vp, 1, 1u);
+    jpog_call(R, "?Enable@TViewport@Toshi@@QAEX_N@Z", vp, 1, 1u);
+    return vp;
+}
+
 int jpog_view(const char *model, const char *keys, const char *materials, int anim, const char *shot, int frames) {
-    if (getenv("JPOG_WINDOW_SHOT")) hle_screen_frame_hook = shown;
+    engine_window_shot();
     mach_enter();
     uint32_t kernel = jpog_engine_kernel(), r = kernel ? jpog_engine_renderer(kernel) : 0;
     if (!r || !jpog_engine_display(r, 1024, 768)) { fprintf(stderr, "[view] the engine did not start\n"); return 1; }
     jpog_call(R, "?CreateMaterialLibraryManager@TRenderInterface@Toshi@@QAEXXZ", r, 0);
     uint32_t mgr = jpog_call(R, "?GetMaterialLibraryManager@TRenderInterface@Toshi@@QAEPAVTMaterialLibraryManager@2@XZ", r, 0);
-    uint32_t skin = system_resource(r, SYS_SHSKIN), scene = system_resource(r, SYS_SCENE);
+    uint32_t skin = engine_system(r, SYS_SHSKIN), scene = engine_system(r, SYS_SCENE);
     fprintf(stderr, "[view] skin shader %08X, scene %08X, materials %08X\n", skin, scene, mgr);
     jpog_call(R, "?SetShader@TMaterialLibraryManager@Toshi@@QAEXHPAVTShader@2@@Z", mgr, 2, 0u, skin);
     if (materials) {
@@ -138,7 +159,7 @@ int jpog_view(const char *model, const char *keys, const char *materials, int an
     }
     uint32_t cls = jpog_export(R, "?m_sClass@TGFXFileObject@Toshi@@2VTClass@2@A");
     uint32_t gfx = jpog_call(R, "?CreateResource@TRenderInterface@Toshi@@QAEPAVTResource@2@PBVTClass@2@PBDPAV32@@Z", r, 3, cls, S("model"),
-                             system_resource(r, SYS_GFXFILES));
+                             engine_system(r, SYS_GFXFILES));
     uint32_t ok = gfx ? jpog_call(R, "?Create@TGFXFileObject@Toshi@@UAE_NPAD@Z", gfx, 1, S(model)) & 0xFF : 0;
     uint32_t tm = ok ? jpog_call(R, "?GetModel@TGFXFileObject@Toshi@@QAEPAVTModel@2@XZ", gfx, 0) : 0;
     if (!tm) { fprintf(stderr, "[view] %s did not load\n", model); return 1; }
@@ -147,17 +168,13 @@ int jpog_view(const char *model, const char *keys, const char *materials, int an
             jpog_call(R, "?GetLODCount@TModel@Toshi@@QAEHXZ", tm, 0), (double)rd(sphere), (double)rd(sphere + 4), (double)rd(sphere + 8),
             (double)rd(sphere + 12));
 
-    uint32_t vp = jpog_call(R, "?CreateViewport@TScene@Toshi@@QAEPAVTViewport@2@PBDPAVTResource@2@_N@Z", scene, 3, S("view"), 0u, 1u);
-    jpog_call(R, "?SetBackgroundColour@TViewport@Toshi@@QAEXEEEE@Z", vp, 4, 0x50u, 0x70u, 0x90u, 0xFFu);
-    jpog_call(R, "?AllowBackgroundClear@TViewport@Toshi@@QAE_N_N@Z", vp, 1, 1u);
-    jpog_call(R, "?AllowDepthClear@TViewport@Toshi@@QAE_N_N@Z", vp, 1, 1u);
+    uint32_t vp = engine_viewport(scene, "view", 0x50, 0x70, 0x90);
     uint32_t cam = jpog_call(R, "?CreateCamera@TScene@Toshi@@QAEPAVTCameraObject@2@PBDPAVTResource@2@@Z", scene, 2, S("camera"), 0u);
     jpog_call(R, "?SetViewport@TCameraObject@Toshi@@QAEPAVTViewport@2@PAV32@@Z", cam, 1, vp);
     jpog_call(R, "?SetCurrentCamera@TScene@Toshi@@QAEXPAVTCameraObject@2@@Z", scene, 1, cam);
     jpog_call(R, "?SetNear@TCameraObject@Toshi@@QAEMM@Z", cam, 1, F(0.1f)), (void)fp_pop();
     jpog_call(R, "?SetFar@TCameraObject@Toshi@@QAEMM@Z", cam, 1, F(500.0f)), (void)fp_pop();
     jpog_call(R, "?Enable@TCameraObject@Toshi@@QAE_N_N@Z", cam, 1, 1u);
-    jpog_call(R, "?Enable@TViewport@Toshi@@QAEX_N@Z", vp, 1, 1u);
     uint32_t inst = jpog_call(R, "?CreateInstance@TGFXFileObject@Toshi@@QAEPAVTGFXFileInstanceObject@2@PBDPAVTResource@2@@Z", gfx, 2, S("instance"), scene);
     uint32_t mi = inst ? jpog_call(R, "?GetModelInstance@TGFXFileInstanceObject@Toshi@@QAEPAVTModelInstance@2@XZ", inst, 0) : 0;
     fprintf(stderr, "[view] viewport %08X, camera %08X, instance %08X, model instance %08X\n", vp, cam, inst, mi);
@@ -183,16 +200,14 @@ int jpog_view(const char *model, const char *keys, const char *materials, int an
     }
     uint64_t start = hle_mono_ns();
     int i = 0;
-    for (; (!frames || i < frames) && !pump(); i++) {
+    for (; (!frames || i < frames) && !engine_pump(); i++) {
         uint32_t mark = hle_scratch_mark();
         float a = 0.7f + (float)i * 0.005f, dist = rad * zoom;    /* round it, looking at its middle; y points down */
         float t[3] = { centre[0] - sinf(a) * dist, centre[1] - dist * 0.13f, centre[2] - cosf(a) * dist };
         jpog_call(R, "?SetTranslate@TTransformObject@Toshi@@QAEXABVTVector3@2@@Z", ct, 1, hle_scratch_copy(t, 12));
         jpog_call(R, "?SetQuat@TTransformObject@Toshi@@QAEXABVTQuaternion@2@@Z", ct, 1, turn(a, -0.13f));
         jpog_call(D, "?BeginScene@TRenderD3DInterface@Toshi@@UAE_NXZ", r, 0);
-        jpog_call(R, "?Begin@TScene@Toshi@@QAE_NXZ", scene, 0);
-        jpog_call(R, "?Update@TScene@Toshi@@QAE_NM@Z", scene, 1, F(1 / 60.0f));
-        jpog_call(R, "?Render@TScene@Toshi@@QAE_NXZ", scene, 0);
+        engine_scene(scene, 1 / 60.0f);
         jpog_call(R, "?End@TScene@Toshi@@QAE_NXZ", scene, 0);
         jpog_call(R, "?FlushShaders@TRenderInterface@Toshi@@QAEXXZ", r, 0);
         if (shot && frames && i == frames - 1) fprintf(stderr, "[view] shot %s: %s\n", shot, jpog_d3d8_shot(shot) ? "ok" : "no");
@@ -303,7 +318,7 @@ static void terrain_weather(uint32_t terrain, uint32_t shader, uint32_t ctx, con
 static void terrain_sky(uint32_t r, uint32_t shader, const char *name) {
     static const struct { const char *weather, *file; } sky[] = { { "normal", "Data/skynorm.dds" }, { "heatwave", "Data/skyheat.dds" },
         { "lightrain", "Data/skyrainL.dds" }, { "heavyrain", "Data/skyrain.dds" }, { "tornado", "Data/skytorn.dds" } };
-    uint32_t factory = system_resource(r, SYS_TEXTURES), which = 0;
+    uint32_t factory = engine_system(r, SYS_TEXTURES), which = 0;
     for (uint32_t i = 0; i < 5; i++) {
         uint32_t t = jpog_call(D, "?CreateTextureFromFile@TTextureFactoryHAL@Toshi@@UAEPAVTTextureResource@2@PBDI@Z", factory, 2, S(sky[i].file), 0u);
         uint32_t tex = t ? jpog_call(D, "?GetD3DTexture@TTextureResourceHAL@Toshi@@QAEPAUIDirect3DTexture8@@XZ", t, 0) : 0;
@@ -314,11 +329,6 @@ static void terrain_sky(uint32_t r, uint32_t shader, const char *name) {
     jpog_call(H, "?SetSkyBlend@TTerrainShaderHAL@Toshi@@UAEXHHM@Z", shader, 3, which, which, F(0));
 }
 
-static void scene_frame(uint32_t scene) {
-    jpog_call(R, "?Begin@TScene@Toshi@@QAE_NXZ", scene, 0);
-    jpog_call(R, "?Update@TScene@Toshi@@QAE_NM@Z", scene, 1, F(1 / 60.0f));
-    jpog_call(R, "?Render@TScene@Toshi@@QAE_NXZ", scene, 0);
-}
 /* The sections in the context's view, drawn: each is meshed as it is activated. */
 static uint32_t terrain_draw(uint32_t r, uint32_t t, uint32_t ctx, uint32_t pos) {
     uint32_t list = hle_scratch(4), n = 0;
@@ -333,12 +343,12 @@ static uint32_t terrain_draw(uint32_t r, uint32_t t, uint32_t ctx, uint32_t pos)
 }
 
 int jpog_terrain(const char *island, const char *shot, int frames) {
-    if (getenv("JPOG_WINDOW_SHOT")) hle_screen_frame_hook = shown;
+    engine_window_shot();
     mach_enter();
     uint32_t kernel = jpog_engine_kernel(), r = kernel ? jpog_engine_renderer(kernel) : 0;
     if (!r || !jpog_engine_display(r, 1024, 768)) { fprintf(stderr, "[terrain] the engine did not start\n"); return 1; }
     jpog_call(R, "?CreateMaterialLibraryManager@TRenderInterface@Toshi@@QAEXXZ", r, 0);
-    uint32_t scene = system_resource(r, SYS_SCENE);
+    uint32_t scene = engine_system(r, SYS_SCENE);
     uint64_t t0 = hle_mono_ns();
     uint32_t t = jpog_call(J, "?CreateObject@ASimJPTerrain@@CGPAVTObject@Toshi@@XZ", 0, 0);
     if (!t) { fprintf(stderr, "[terrain] no terrain\n"); return 1; }
@@ -370,10 +380,7 @@ int jpog_terrain(const char *island, const char *shot, int frames) {
     }
     fprintf(stderr, "[terrain] island %s in %.1f s\n", island, (double)(hle_mono_ns() - t0) / 1e9);
 
-    uint32_t vp = jpog_call(R, "?CreateViewport@TScene@Toshi@@QAEPAVTViewport@2@PBDPAVTResource@2@_N@Z", scene, 3, S("view"), 0u, 1u);
-    jpog_call(R, "?SetBackgroundColour@TViewport@Toshi@@QAEXEEEE@Z", vp, 4, 0x8Cu, 0x96u, 0xE6u, 0xFFu);
-    jpog_call(R, "?AllowBackgroundClear@TViewport@Toshi@@QAE_N_N@Z", vp, 1, 1u);
-    jpog_call(R, "?AllowDepthClear@TViewport@Toshi@@QAE_N_N@Z", vp, 1, 1u);
+    uint32_t vp = engine_viewport(scene, "view", 0x8C, 0x96, 0xE6);
     uint32_t cam = jpog_call(R, "?CreateCamera@TScene@Toshi@@QAEPAVTCameraObject@2@PBDPAVTResource@2@@Z", scene, 2, S("camera"), 0u);
     jpog_call(R, "?SetViewport@TCameraObject@Toshi@@QAEPAVTViewport@2@PAV32@@Z", cam, 1, vp);
     jpog_call(R, "?SetCurrentCamera@TScene@Toshi@@QAEXPAVTCameraObject@2@@Z", scene, 1, cam);
@@ -382,7 +389,6 @@ int jpog_terrain(const char *island, const char *shot, int frames) {
     jpog_call(R, "?SetNear@TCameraObject@Toshi@@QAEMM@Z", cam, 1, F(1.0f)), (void)fp_pop();
     jpog_call(R, "?SetFar@TCameraObject@Toshi@@QAEMM@Z", cam, 1, F(far_)), (void)fp_pop();
     jpog_call(R, "?Enable@TCameraObject@Toshi@@QAE_N_N@Z", cam, 1, 1u);
-    jpog_call(R, "?Enable@TViewport@Toshi@@QAEX_N@Z", vp, 1, 1u);
     uint32_t ct = jpog_call(R, "?GetTransformObject@TCameraObject@Toshi@@QAEPAVTTransformObject@2@XZ", cam, 0);
     uint32_t ctx = jpog_call(R, "?GetRenderContext@TViewport@Toshi@@QAEPAVTRenderContext@2@XZ", vp, 0);
     const char *wn = getenv("JPOG_WEATHER"), *at = getenv("JPOG_TERRAIN_AT");
@@ -393,7 +399,7 @@ int jpog_terrain(const char *island, const char *shot, int frames) {
     if (at) sscanf(at, "%f,%f,%f,%f,%f", &px, &pz, &up, &head, &dip);
     uint64_t start = hle_mono_ns();
     int i = 0;
-    for (; (!frames || i < frames) && !pump(); i++) {
+    for (; (!frames || i < frames) && !engine_pump(); i++) {
         uint32_t mark = hle_scratch_mark(), pos;
         while (jpog_headless && hle_mono_ns() - start < (uint64_t)i * 16666667u) usleep(500);   /* a frame's time: the sea moves by it */
         jpog_call(K, "?Update@TKernelInterface@Toshi@@QAE_NXZ", kernel, 0);
@@ -408,7 +414,7 @@ int jpog_terrain(const char *island, const char *shot, int frames) {
          * as the shader has it (it culls the other way round). */
         jpog_call(R, "?SetTranslate@TTransformObject@Toshi@@QAEXABVTVector3@2@@Z", ct, 1, pos);
         jpog_call(R, "?SetQuat@TTransformObject@Toshi@@QAEXABVTQuaternion@2@@Z", ct, 1, turn(a, dip));
-        scene_frame(scene);
+        engine_scene(scene, 1 / 60.0f);
         uint32_t view = jpog_call(R, "?GetWorldViewMatrix@TRenderContext@Toshi@@QBEABVTMatrix44@2@XZ", ctx, 0);
         float m[16];
         for (uint32_t k = 0; k < 16; k++) m[k] = k / 4 == 1 ? -rd(view + 4 * k) : rd(view + 4 * k);
@@ -421,7 +427,7 @@ int jpog_terrain(const char *island, const char *shot, int frames) {
         jpog_call(T, "?EnableRenderEnvMap@TTerrainInterface@Toshi@@QAEX_N@Z", t, 1, 0u);
         jpog_call(H, "?EnableRenderEnvMap@TTerrainShaderHAL@Toshi@@UAEX_N@Z", sh, 1, 0u);
         jpog_call(R, "?End@TScene@Toshi@@QAE_NXZ", scene, 0);
-        scene_frame(scene);
+        engine_scene(scene, 1 / 60.0f);
         uint32_t n = terrain_draw(r, t, ctx, pos);
         jpog_call(R, "?End@TScene@Toshi@@QAE_NXZ", scene, 0);
         if (i == 0) fprintf(stderr, "[terrain] %u sections in view\n", n);
