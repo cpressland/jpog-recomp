@@ -298,8 +298,7 @@ Toshi's `TMatrix44::Invert`. What it took:
 - `SuspendThread` and `TerminateThread` fail: a guest thread is a host one
   under the machine lock. To watch, when the engine's threads run.
 
-Not yet: `Direct3DCreate8` (answers NULL), FMOD, the drives and registry, and
-the game's own entry. `fmod.dll`'s 41 calls can be answered by the host (SDL
+Not yet: FMOD, the drives and registry, and the game's own entry. `fmod.dll`'s 41 calls can be answered by the host (SDL
 audio) rather than lifted; see Phase 6's fallback.
 
 ### Phase 5 — Direct3D 8 on Metal (the bulk: 4–8 weeks)
@@ -322,6 +321,37 @@ audio) rather than lifted; see Phase 6's fallback.
 Milestones: the front-end menus → a park's terrain and sky → dinosaurs and
 buildings (skinned, `TSkinShaderD3D`) → water reflections and weather →
 full speed at native resolution.
+
+**Direct3D 8 draws (2026-11-24).** `src/host/d3d8.c` is every interface
+(`IDirect3D8`, the device's 97 methods, textures, surfaces, buffers), on
+stl-recomp's Metal backend and shader translator, with fixed function new
+(`ff.c`). `jpog --selftest` calls it through the vtables and compares pixels
+(104 checks, and 7 of the engine; 157 in all), and Toshi's own `TRenderD3DInterface`, driven by the
+host, builds its adapter database, creates an 800x600 device, loads its shader
+DLLs and presents frames. Metal's API and shader validation report nothing.
+
+- **What the engine asks for** (a scan of the renderer's DLLs): besides the
+  usual, fixed-function vertices, stages to 4 textures, lights, linear table
+  and vertex fog, `ZBIAS`, a clip plane, bump-environment mapping, state
+  blocks, `CopyRects`, volume and cube textures. Its 26 shaders are vs_1_1 and
+  ps_1_1; all compile. `texm3x2pad`/`texm3x2tex` were the only opcodes the
+  translator lacked.
+- **Pixel centres**: Direct3D 8's are at whole numbers, so positions move half
+  a pixel right and down (less 1/128, so a whole-number edge never lies on a
+  centre). stl-recomp's `d3d9_metal.m` moves them the other way; its
+  full-screen passes may be a pixel off. To check there.
+- **A readback straight after Present** has to wait for the frames in flight:
+  stl-recomp's `flush_wait` does not.
+- Depth bias, clip planes, the alpha test (on 8 bits) and fog are in the
+  shaders. Objects are freed when their last reference goes (stl-recomp keeps
+  them all).
+- Not done: palettes, `PREMODULATE`, point sprites, `WRAP` states, a sampler's
+  `MIPMAPLODBIAS` (the sprites ask for -2), multisampling, render targets other
+  than 32-bit, indexed vertex blending, the gamma ramp, and vertex buffers
+  larger than needed copied whole into the ring when locked. A texture written
+  mid-frame changes for that frame's earlier draws too.
+- Next: a window (`jpog_headless` is 1), and a scene through the engine's own
+  models and terrain.
 
 ### Phase 6 — sound, movies, input (1–2 weeks, alongside 5)
 - FMOD 3 lifted on win32hle's DirectSound 3D. Fallback: an HLE of the 41

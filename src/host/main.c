@@ -23,6 +23,7 @@
 #include "jpog.h"
 
 int jpog_verbose;
+int jpog_headless = 1;                   /* until there is a window to open */
 
 /* A function the lift left as a stub (run_lift.py writes none, today). */
 void recomp_not_lifted(uint32_t va) { hle_fatal("sub_%08X was not lifted", va); }
@@ -86,6 +87,7 @@ __attribute__((visibility("default"))) int jpog_main(int argc, char **argv) {
         for (int i = 0; i < 4; i++) sigaction(sigs[i], &sa, NULL);
     }
     win32hle_register(jpog_shims);           /* first: the game's own answers win */
+    win32hle_register(jpog_d3d8_shims);
     win32hle_register(jpog_msvcrt_shims);
     win32hle_register(win32hle_eh32);
     recomp_host_init();
@@ -103,6 +105,7 @@ __attribute__((visibility("default"))) int jpog_main(int argc, char **argv) {
         if (g_jpog_mod[i].on_demand) bad += jpog_load_library(g_jpog_mod[i].file) == 0;
     printf("attached: %d of %d\n", g_jpog_nmod - bad, g_jpog_nmod);
     int failed = jpog_selftest();
+    if (jpog_verbose) jpog_d3d8_summary();
     printf("selftest: %s\n", failed ? "FAILED" : "ok");
     return failed != 0;
 }

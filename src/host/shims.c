@@ -74,11 +74,6 @@ static void g_ExtTextOutA(void) {      /* (dc, x, y, options, rect, text, n, dx)
     uint32_t r = A32(6) ? hle_call_guest(hle_resolve("TextOutA"), 5, args) : 1;
     RET(r, 8);
 }
-static void d_Direct3DCreate8(void) {
-    fprintf(stderr, "[d3d8] Direct3DCreate8(%u): not yet\n", A32(0));
-    RET(0, 1);
-}
-
 const win32hle_shim jpog_shims[] = {
     { "LoadLibraryA", k_LoadLibraryA }, { "GetProcAddress", k_GetProcAddress }, { "FreeLibrary", k_FreeLibrary },
     { "DisableThreadLibraryCalls", k_DisableThreadLibraryCalls },
@@ -88,6 +83,5 @@ const win32hle_shim jpog_shims[] = {
     { "SuspendThread", k_SuspendThread }, { "TerminateThread", k_TerminateThread },
     { "CreateAcceleratorTableA", u_CreateAcceleratorTableA }, { "DestroyAcceleratorTable", u_DestroyAcceleratorTable },
     { "UnregisterClassA", u_UnregisterClassA }, { "SetMapMode", g_SetMapMode }, { "ExtTextOutA", g_ExtTextOutA },
-    { "Direct3DCreate8", d_Direct3DCreate8 },
     { NULL, NULL }
 };

@@ -20,6 +20,7 @@ typedef struct {
 
 extern jpog_module g_jpog_mod[JPOG_MAX_MODULES];
 extern int g_jpog_nmod, g_jpog_stubs, jpog_verbose;
+extern int jpog_headless;                /* no window, no sound device */
 
 int  jpog_load(const char *game);                                   /* loader.c: map and bind every module */
 int  jpog_attach(jpog_module *m);                                   /* DllMain, after its imports' */
@@ -36,6 +37,13 @@ void jpog_setjmp3(void);                                            /* setjmp.c 
 void jpog_longjmp(void);
 void jpog_cpuid(void);                                              /* cpu.c */
 int  jpog_selftest(void);                                           /* selftest.c: how many checks failed */
+void jpog_check(int ok, const char *what, const char *got);
+void jpog_selftest_d3d8(void);                                      /* selftest_d3d8.c */
+void jpog_selftest_engine(void);                                    /* selftest_engine.c */
 
+void jpog_d3d8_summary(void);                                       /* d3d8.c: the Direct3D 8 calls made, at exit */
+int  jpog_d3d8_shot(const char *path);                              /* the back buffer as a BMP */
+
+extern const win32hle_shim jpog_d3d8_shims[];                       /* d3d8.c */
 extern const win32hle_shim jpog_msvcrt_shims[];                     /* msvcrt.c */
 extern const win32hle_shim jpog_shims[];                            /* shims.c */

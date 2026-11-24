@@ -14,7 +14,9 @@ and no installer; the SecuROM wrapper on `SimJP.exe` has been fully resolved
 (see [docs/PLAN.md](docs/PLAN.md), Phase 2). All 3,642 redirected import
 calls have been mapped back to their original targets. All 20 modules
 (SimJP.exe, 19 DLLs) are lifted to C and compile. The host maps and binds the
-DLLs, runs their start-up and checks them (below); nothing draws yet.
+DLLs, runs their start-up, and answers Direct3D 8 on Metal: Toshi's own
+renderer creates its device and presents frames on it (below). There is no
+window yet, and the game itself has not been run on it.
 
 ## The lift
 
@@ -40,7 +42,9 @@ compile in about 2 minutes.
 pkg-config (Homebrew): `loader.c` maps the modules at their bases and binds
 them to each other, `msvcrt.c` is Windows' C runtime (not on the disc),
 `shims.c` the Win32 calls win32hle lacks, `setjmp.c` and `cpu.c` as
-stl-recomp's. Its test needs only the DLLs, lifted to a folder of their own
+stl-recomp's. Direct3D 8 is `d3d8.c` (the interfaces and state), `dxso.c`
+(vs_1_1 and ps_1_1 to Metal's language), `ff.c` (fixed function, likewise)
+and `d3d_metal.m`. Its test needs only the DLLs, lifted to a folder of their own
 (`--modules` with every module but `simjp`):
 
 ```
@@ -48,6 +52,10 @@ stl-recomp's. Its test needs only the DLLs, lifted to a folder of their own
 cmake -S . -B build-dlls -G Ninja -DGEN_DIR=$PWD/work/gen-dlls && cmake --build build-dlls
 build-dlls/jpog --game GAME --selftest
 ```
+
+`JPOG_TEST_SHOTS=DIR` keeps the tests' pictures; `JPOG_SHOT=DIR` every
+`JPOG_SHOT_EVERY`th frame presented, `JPOG_TRACE_FRAME=N` lists frame N's
+draws, `JPOG_CPU=x87` reports a CPU without SSE.
 
 Nothing of the game is in this repository, and nothing generated from it.
 

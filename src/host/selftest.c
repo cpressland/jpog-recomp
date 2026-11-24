@@ -13,7 +13,7 @@
 #include "jpog.h"
 
 static int g_failed, g_checks;
-static void check(int ok, const char *what, const char *got) {
+void jpog_check(int ok, const char *what, const char *got) {
     g_checks++;
     if (ok) return;
     g_failed++;
@@ -21,6 +21,7 @@ static void check(int ok, const char *what, const char *got) {
 }
 
 /* ---- msvcrt ---------------------------------------------------------------- */
+#define check jpog_check
 static uint32_t S(const char *s) { return hle_scratch_copy(s, (uint32_t)strlen(s) + 1); }
 static uint32_t W(const char *s) {
     uint32_t n = (uint32_t)strlen(s), w = hle_scratch(2 * n + 2);
@@ -205,6 +206,10 @@ int jpog_selftest(void) {
     mach_leave();
     test_libmmd();
     test_toshi();
+    mach_enter();
+    jpog_selftest_d3d8();
+    jpog_selftest_engine();
+    mach_leave();
     printf("selftest: %d checks, %d failed\n", g_checks, g_failed);
     return g_failed;
 }
