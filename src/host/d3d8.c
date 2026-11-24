@@ -64,7 +64,7 @@ void jpog_d3d8_summary(void) {
 }
 
 /* ---- objects -------------------------------------------------------------- */
-static uint32_t g_vt_d3d, g_vt_dev, g_vt_tex, g_vt_cube, g_vt_vol, g_vt_surf, g_vt_vb, g_vt_ib;
+static uint32_t g_vt_d3d, g_vt_dev, g_vt_tex, g_vt_cube, g_vt_vol, g_vt_surf, g_vt_volume, g_vt_vb, g_vt_ib;
 static uint32_t g_device;                /* the one device */
 
 static uint32_t make(uint32_t vt, uint32_t rec_size, void **rec) {
@@ -87,7 +87,7 @@ static void keep(uint32_t o) {
 }
 
 /* A texture's surface counts on the texture. */
-static uint32_t counted(uint32_t o) { return REC(o) && MEM32(o) == g_vt_surf && RES(o)->parent ? RES(o)->parent : o; }
+static uint32_t counted(uint32_t o) { return REC(o) && (MEM32(o) == g_vt_surf || MEM32(o) == g_vt_volume) && RES(o)->parent ? RES(o)->parent : o; }
 static void addref(uint32_t o) { if (o) MEM32(counted(o) + 4)++; }
 static void out_obj(uint32_t pp, uint32_t o) { if (pp) MEM32(pp) = o; }
 
@@ -156,8 +156,10 @@ static int texture_format(uint32_t f) {
     }
     return 0;
 }
-/* What can be drawn to: what Metal draws to as it is. */
-static int target_format(uint32_t f) { return f == 21 || f == 22; }
+/* What can be drawn to: what Metal draws to as it is, and R5G6B5, kept as
+ * A8R8G8B8 (the water's ripples are made in one). The screen is 32 bits. */
+static int target_format(uint32_t f) { return f == 21 || f == 22 || f == 23; }
+static int display_format(uint32_t f) { return f == 21 || f == 22; }
 
 uint32_t level_mem(res_t *r, uint32_t level, uint32_t face, uint32_t *pitch, uint32_t *slice) {
     uint32_t w = level_dim(r->width, level), h = level_dim(r->height, level),
@@ -258,7 +260,7 @@ M(d_GetAdapterDisplayMode) {                 /* (adapter, D3DDISPLAYMODE*) */
 }
 M(d_CheckDeviceType) {                       /* (adapter, type, displayFmt, backFmt, windowed) */
     COUNT();
-    RET(A32(2) == 1 && A32(3) == 22 && target_format(A32(4)) ? D3D_OK : D3DERR_NOTAVAILABLE, 6);
+    RET(A32(2) == 1 && A32(3) == 22 && display_format(A32(4)) ? D3D_OK : D3DERR_NOTAVAILABLE, 6);
 }
 M(d_CheckDeviceFormat) {                     /* (adapter, type, adapterFmt, usage, rtype, checkFmt) */
     COUNT();
@@ -346,7 +348,7 @@ static int take_params(dev_t_ *d, uint32_t pp) {
     if (!d->params[2]) d->params[2] = 22;
     if (!d->params[3]) d->params[3] = 1;
     memcpy(hle_ptr(pp), d->params, 16);
-    return target_format(d->params[2]) && (!d->params[8] || is_depth(d->params[9]));
+    return display_format(d->params[2]) && (!d->params[8] || is_depth(d->params[9]));
 }
 
 M(d_CreateDevice) {                          /* (adapter, type, hwnd, flags, D3DPRESENT_PARAMETERS*, &device) */
@@ -1046,24 +1048,23 @@ static void put_desc(uint32_t p, res_t *r, uint32_t level) {
 }
 M(t_GetLevelDesc) { COUNT(); res_t *r = RES(A32(0)); if (A32(1) >= r->levels) RET(D3DERR_INVALIDCALL, 3); put_desc(A32(2), r, A32(1)); RET(D3D_OK, 3); }
 M(s_GetDesc) { COUNT(); put_desc(A32(1), RES(A32(0)), 0); RET(D3D_OK, 2); }
-M(vt_GetLevelDesc) {                         /* D3DVOLUME_DESC: format, type, usage, pool, size, width, height, depth */
-    COUNT();
-    res_t *r = RES(A32(0));
-    uint32_t l = A32(1), p = A32(2);
-    if (l >= r->levels) RET(D3DERR_INVALIDCALL, 3);
+static void put_volume_desc(uint32_t p, res_t *r, uint32_t l) {   /* format, type, usage, pool, size, width, height, depth */
     uint32_t w = level_dim(r->width, l), h = level_dim(r->height, l), d = level_dim(r->depth, l);
     MEM32(p) = r->format, MEM32(p + 4) = R_VOLUME, MEM32(p + 8) = r->usage, MEM32(p + 12) = r->pool;
     MEM32(p + 16) = pitch_of(r->format, w) * rows_of(r->format, h) * d;
     MEM32(p + 20) = w, MEM32(p + 24) = h, MEM32(p + 28) = d;
-    RET(D3D_OK, 3);
 }
+M(vt_GetLevelDesc) { COUNT(); res_t *r = RES(A32(0)); if (A32(1) >= r->levels) RET(D3DERR_INVALIDCALL, 3); put_volume_desc(A32(2), r, A32(1)); RET(D3D_OK, 3); }
+M(vo_GetDesc) { COUNT(); put_volume_desc(A32(1), RES(A32(0)), 0); RET(D3D_OK, 2); }
 static uint32_t level_surface(uint32_t tex, uint32_t level, uint32_t face) {
     res_t *t = RES(tex), *s;
     uint32_t *slot = &t->surf[(face * 16 + level) % 96];
     if (!*slot) {
-        uint32_t o = make(g_vt_surf, sizeof(res_t), (void **)&s);
-        s->kind = R_SURFACE, s->device = t->device;
-        s->width = level_dim(t->width, level), s->height = level_dim(t->height, level), s->depth = s->levels = 1;
+        int vol = t->kind == R_VOLUMETEXTURE;
+        uint32_t o = make(vol ? g_vt_volume : g_vt_surf, sizeof(res_t), (void **)&s);
+        s->kind = vol ? R_VOLUME : R_SURFACE, s->device = t->device;
+        s->width = level_dim(t->width, level), s->height = level_dim(t->height, level);
+        s->depth = vol ? level_dim(t->depth, level) : 1, s->levels = 1;
         s->format = t->format, s->usage = t->usage, s->pool = t->pool;
         s->parent = tex, s->level = level, s->face = face;
         *slot = o;
@@ -1078,7 +1079,7 @@ M(c_GetCubeMapSurface) {                     /* (face, level, &surface) */
     out_obj(A32(3), level_surface(A32(0), A32(2), A32(1)));
     RET(D3D_OK, 4);
 }
-M(vt_GetVolumeLevel) { COUNT(); out_obj(A32(2), 0); RET(D3DERR_INVALIDCALL, 3); }
+M(vt_GetVolumeLevel) { COUNT(); if (A32(1) >= RES(A32(0))->levels) RET(D3DERR_INVALIDCALL, 3); out_obj(A32(2), level_surface(A32(0), A32(1), 0)); RET(D3D_OK, 3); }
 
 /* A level's bytes, at a rectangle of it, for the guest to read and write. */
 static uint32_t lock(res_t *r, uint32_t level, uint32_t face, uint32_t out, uint32_t rect, uint32_t flags) {
@@ -1108,11 +1109,9 @@ M(s_LockRect) {                              /* (&locked, rect, flags) */
 }
 M(s_UnlockRect) { COUNT(); RET(D3D_OK, 1); }
 M(s_GetContainer) { COUNT(); uint32_t p = RES(A32(0))->parent; p = p ? p : RES(A32(0))->device; addref(p); out_obj(A32(2), p); RET(D3D_OK, 3); }
-M(vt_LockBox) {                              /* (level, &locked, box, flags): row pitch, slice pitch, bits */
-    COUNT();
-    res_t *r = RES(A32(0));
-    uint32_t l = A32(1), out = A32(2), box = A32(3), pitch, slice;
-    if (l >= r->levels) RET(D3DERR_INVALIDCALL, 5);
+static uint32_t lock_box(res_t *r, uint32_t l, uint32_t out, uint32_t box, uint32_t flags) {   /* row pitch, slice pitch, bits */
+    uint32_t pitch, slice;
+    if (l >= r->levels) return D3DERR_INVALIDCALL;
     uint32_t mem = level_mem(r, l, 0, &pitch, &slice);
     if (box) {                                           /* left, top, right, bottom, front, back */
         int b = block_bytes(r->format);
@@ -1120,9 +1119,16 @@ M(vt_LockBox) {                              /* (level, &locked, box, flags): ro
         mem += z * slice + (b ? (y / 4) * pitch + (x / 4) * (uint32_t)b : y * pitch + x * (uint32_t)bits_per_pixel(r->format) / 8);
     }
     MEM32(out) = pitch, MEM32(out + 4) = slice, MEM32(out + 8) = mem;
-    if (!(A32(4) & 0x10)) r->dirty[0] |= 1u << l;
-    RET(D3D_OK, 5);
+    if (!(flags & 0x10)) r->dirty[0] |= 1u << l;
+    return D3D_OK;
 }
+M(vt_LockBox) { COUNT(); RET(lock_box(RES(A32(0)), A32(1), A32(2), A32(3), A32(4)), 5); }   /* (level, &locked, box, flags) */
+M(vo_LockBox) {                              /* (&locked, box, flags) */
+    COUNT();
+    res_t *v = RES(A32(0));
+    RET(lock_box(RES(v->parent), v->level, A32(1), A32(2), A32(3)), 4);
+}
+M(vo_UnlockBox) { COUNT(); RET(D3D_OK, 1); }
 M(vt_UnlockBox) { COUNT(); RET(D3D_OK, 2); }
 M(vt_AddDirtyBox) { COUNT(); RET(D3D_OK, 2); }
 M(b_Lock) {                                  /* (offset, size, &data, flags) */
@@ -1180,15 +1186,18 @@ static const win32hle_shim vt_vol[] = { IUNKNOWN, RESOURCE, E(r_SetLOD), E(r_Get
     E(vt_GetVolumeLevel), E(vt_LockBox), E(vt_UnlockBox), E(vt_AddDirtyBox), END };
 static const win32hle_shim vt_surf[] = { IUNKNOWN, E(u_GetDevice), E(u_SetPrivateData), E(u_GetPrivateData), E(u_FreePrivateData),
     E(s_GetContainer), E(s_GetDesc), E(s_LockRect), E(s_UnlockRect), END };
+static const win32hle_shim vt_volume[] = { IUNKNOWN, E(u_GetDevice), E(u_SetPrivateData), E(u_GetPrivateData), E(u_FreePrivateData),
+    E(s_GetContainer), E(vo_GetDesc), E(vo_LockBox), E(vo_UnlockBox), END };
 static const win32hle_shim vt_buf[] = { IUNKNOWN, RESOURCE, E(b_Lock), E(b_Unlock), E(b_GetDesc), END };
 _Static_assert(sizeof vt_tex / sizeof *vt_tex == 19 + 1 && sizeof vt_surf / sizeof *vt_surf == 11 + 1 &&
+               sizeof vt_volume / sizeof *vt_volume == 11 + 1 &&
                sizeof vt_buf / sizeof *vt_buf == 14 + 1, "textures have 19 methods, surfaces 11, buffers 14");
 
 static void d_Direct3DCreate8(void) {        /* (D3D_SDK_VERSION) */
     if (!gpu_available()) { fprintf(stderr, "[d3d8] no GPU\n"); RET(0, 1); }
     if (!g_vt_d3d) {
         g_vt_d3d = hle_com_vtable(vt_d3d), g_vt_dev = hle_com_vtable(vt_dev), g_vt_tex = hle_com_vtable(vt_tex);
-        g_vt_cube = hle_com_vtable(vt_cube), g_vt_vol = hle_com_vtable(vt_vol), g_vt_surf = hle_com_vtable(vt_surf);
+        g_vt_cube = hle_com_vtable(vt_cube), g_vt_vol = hle_com_vtable(vt_vol), g_vt_surf = hle_com_vtable(vt_surf), g_vt_volume = hle_com_vtable(vt_volume);
         g_vt_vb = hle_com_vtable(vt_buf), g_vt_ib = hle_com_vtable(vt_buf);
     }
     RET(make(g_vt_d3d, 16, NULL), 1);

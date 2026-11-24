@@ -15,8 +15,8 @@ and no installer; the SecuROM wrapper on `SimJP.exe` has been fully resolved
 calls have been mapped back to their original targets. All 20 modules
 (SimJP.exe, 19 DLLs) are lifted to C and compile. The host maps and binds the
 DLLs, runs their start-up, and answers Direct3D 8 on Metal: Toshi's own
-renderer runs on it, and shows the game's models, animated, in a window
-(below). The game itself has not been run on it.
+renderer runs on it, and shows the game's models, animated, and its islands,
+with their sky, sea and grass, in a window (below). The game itself has not been run on it.
 
 ## The lift
 
@@ -61,6 +61,18 @@ build-dlls/jpog --game GAME --view Data/Models/Trex_hi.tmd \
     --materials Data/matlibs/dinos_judithriver_b.tml --anim 3 --windowed
 python3 tools/test/models.py build-dlls/jpog GAME      # all 360, headless: each loads and draws
 ```
+
+An island: Isla Nublar, or one the game's generator makes from a seed:
+
+```
+JPOG_TERRAIN_AT=290,170,6,0.3,-0.2 build-dlls/jpog --game GAME --terrain nublar --windowed
+python3 tools/test/terrain.py build-dlls/jpog GAME     # 49 views, headless
+```
+
+`JPOG_TERRAIN_AT` is x, z (0 to 1008), how far over the ground or sea, heading
+and pitch in radians; `JPOG_WEATHER` one of `Weather.ini`'s (`normal`,
+`heatwave`, `lightrain`, `heavyrain`, `tornado`); `JPOG_TERRAIN_FAR` the far
+plane (150).
 
 `--headless --frames N --shot FILE.bmp` keeps the last of N frames;
 `JPOG_VIEW_ZOOM` is how far back, in the model's radii (0.6).

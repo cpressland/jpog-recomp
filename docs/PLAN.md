@@ -326,7 +326,7 @@ full speed at native resolution.
 (`IDirect3D8`, the device's 97 methods, textures, surfaces, buffers), on
 stl-recomp's Metal backend and shader translator, with fixed function new
 (`ff.c`). `jpog --selftest` calls it through the vtables and compares pixels
-(104 checks, and 7 of the engine; 157 in all), and Toshi's own `TRenderD3DInterface`, driven by the
+(111 checks, and 7 of the engine; 164 in all), and Toshi's own `TRenderD3DInterface`, driven by the
 host, builds its adapter database, creates an 800x600 device, loads its shader
 DLLs and presents frames. Metal's API and shader validation report nothing.
 
@@ -347,7 +347,7 @@ DLLs and presents frames. Metal's API and shader validation report nothing.
   them all).
 - Not done: palettes, `PREMODULATE`, point sprites, `WRAP` states, a sampler's
   `MIPMAPLODBIAS` (the sprites ask for -2), multisampling, render targets other
-  than 32-bit, indexed vertex blending, the gamma ramp, and vertex buffers
+  than 32-bit and R5G6B5, indexed vertex blending, the gamma ramp, and vertex buffers
   larger than needed copied whole into the ring when locked. A texture written
   mid-frame changes for that frame's earlier draws too.
 
@@ -368,8 +368,36 @@ there with why.
   the engine's own doing.
 - Wrong arguments fault as they would on Windows: an animation index the model
   has not got, for one.
-- Next: terrain, sky and water (TTerrainShader), sprites and the GUI; FMOD;
-  then the game's own entry.
+
+**Terrain, sky, sea and grass (2026-11-24).** `jpog --terrain nublar|SEED`
+makes an island with `ASimJPTerrain` (the game's Isla Nublar, or
+`GenerateCustom` with a seed and the generator's own defaults) and draws it
+through the engine's terrain shaders, "high end" ground and water: LOD meshes,
+the four ground textures blended by volume textures, grass, the sky dome, light
+scattering, and a sea that ripples and reflects. An island takes under a
+second. `tools/test/terrain.py` draws 49 views (every weather, two made
+islands); Metal's validation reports nothing; 113 MB after 300 frames and
+after 3,000.
+
+- What `SimJP.exe` does there, `engine.c` does, read from the DLLs' side:
+  ticks the kernel (the sea's step is its time), culls the sections, activates
+  each (which meshes and draws it), and draws a first pass, the world turned
+  over about y = 0, between `EnableRenderEnvMap(true)` and `(false)`.
+- `CullTerrain` wants planes facing in; `TRenderContext`'s face out.
+- `TTerrainInterface::Create` makes its own shaders by class name. The sky is
+  a dome 145 units in radius that writes depth, so nothing beyond it is seen
+  and the far plane is 150 here; the game's own is not known yet.
+- `Weather.ini`'s `pc_scatlight` is inferred, not read from the game: Rayleigh,
+  Mie, inscattering, g, heading, the sun's angle in degrees, intensity,
+  extinction, near and far of the far plane, two colours, the sun's bias and
+  how much. All five weathers look like themselves. Entry 4 (heading) is not
+  used, nor are `deepoceancolour` and `waterdistortion`.
+- With no section over the sea's reflection limit in view, the shader's flush
+  skips the sky too, and open sea reflects its clear colour: the shader's
+  doing, as driven here. What else the game draws into it is to be seen.
+- Direct3D 8 gained `IDirect3DVolume8` and R5G6B5 render targets (kept as
+  32-bit; not read back).
+- Next: sprites and the GUI; FMOD; then the game's own entry.
 
 ### Phase 6 — sound, movies, input (1–2 weeks, alongside 5)
 - FMOD 3 lifted on win32hle's DirectSound 3D. Fallback: an HLE of the 41

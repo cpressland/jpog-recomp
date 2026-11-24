@@ -335,6 +335,18 @@ static void tests(void) {
         quad3d(0.75f, 0xFFFFFFFF);
         grab();
         expect("second slice", 32, 32, 0x00FF00, 0);
+        result("GetVolumeLevel", com(v, 15, 2, 0u, out));
+        uint32_t l = MEM32(out), d = hle_scratch(32), box[6] = { 0, 0, 1, 1, 1, 2 };
+        result("a volume's GetDesc", com(l, 8, 1, d));
+        result("its size", MEM32(d + 20) != 1 || MEM32(d + 24) != 1 || MEM32(d + 28) != 2);
+        result("its LockBox, the second slice", com(l, 9, 3, lk, G(box, 24), 0u));
+        MEM32(MEM32(lk + 8)) = 0xFF0000FF;
+        com(l, 10, 0); com(l, 2, 0);
+        com(g_dev, CLEAR, 6, 0u, 0u, 3u, 0u, F(1.0f), 0u);
+        quad3d(0.75f, 0xFFFFFFFF);
+        grab();
+        expect("written through the level", 32, 32, 0x0000FF, 0);
+        result("past its levels", com(v, 15, 2, 1u, out) == 0);
     }
 
     /* bump environment mapping: stage 1's coordinates moved by stage 0's texel */
@@ -377,6 +389,7 @@ static void tests(void) {
         char b[16];
         snprintf(b, sizeof b, "%06X", seen);
         jpog_check(seen == 0xFF0000, "d3d8 target: read back", b);
+        result("an R5G6B5 target", com(g_dev, CREATETEXTURE, 7, 16u, 16u, 1u, 1u, 23u, 0u, out));
         grab();
         expect("the target's quad", 8, 8, 0xFF0000, 0), expect("its clear", 24, 24, 0x112233, 0), expect("copied", 45, 45, 0xFF0000, 0), expect("not past it", 57, 57, 0, 0);
     }
