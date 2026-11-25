@@ -47,20 +47,15 @@ def analyse(game, work):
     pe = pefile.PE(img)
     base = pe.OPTIONAL_HEADER.ImageBase
     
-    # Find .text section (the game's code)
-    text_section = None
-    for s in pe.sections:
-        if s.Name.startswith(b'.text'):
-            text_section = s
-            break
-    
-    if not text_section:
-        raise SystemExit('No .text section found')
-    
-    text_start = base + text_section.VirtualAddress
-    text_end = base + text_section.VirtualAddress + text_section.Misc_VirtualSize
-    
-    print(f'SimJP.exe: .text at 0x{text_start:08X}-0x{text_end:08X}')
+    # Find executable code sections (.text + PSGSFD*, excluding .cms_t)
+    code_sections = [s for s in pe.sections if (s.Characteristics & 0x20000000) and not s.Name.startswith(b'.cms_')]
+    if not code_sections:
+        raise SystemExit('No code sections found')
+
+    text_start = min(base + s.VirtualAddress for s in code_sections)
+    text_end = max(base + s.VirtualAddress + max(s.Misc_VirtualSize, s.SizeOfRawData) for s in code_sections)
+
+    print(f'SimJP.exe: code at 0x{text_start:08X}-0x{text_end:08X}')
     
     # Write code range info
     with open(os.path.join(out, 'code_range.json'), 'w') as f:
@@ -74,7 +69,7 @@ def analyse(game, work):
                   '--seeds', os.path.join(out, 'rtti_seeds.json')]),
         ('disasm', [py, os.path.join(t, 'disasm', 'disasm32.py'), img, '-o', os.path.join(out, 'functions.json'),
                     '--seed-functions', os.path.join(out, 'rtti_seeds.json')]),
-        ('data', [py, '-I', os.path.join(HERE, 'data_code_ptrs.py'), img, os.path.join(out, 'functions.json'),
+        ('data', [py, os.path.join(HERE, 'data_code_ptrs.py'), img, os.path.join(out, 'functions.json'),
                   os.path.join(out, 'run_seeds.json')]),
     )
     
@@ -90,9 +85,27 @@ def analyse(game, work):
                 raise SystemExit(f'{name}: {step} failed (see {log_path})')
         print(f'  {step}: ok')
     
-    # Note: we don't patch code_end here because there are references from .text to .cms_t
-    # (exception handlers, etc.). The lift will need to handle .cms_t specially.
-    
+    # Ensure every non-null entry in SimJP.exe's _initterm C++ constructor table
+    # (0x00835000..0x0083C5C0) is in the catalog or run_seeds.json: entries are
+    # 0x40-byte spaced per translation unit, so data_code_ptrs.py's 3-in-a-row
+    # heuristic misses isolated constructors.
+    funcs_set = {f['address'] for f in json.load(open(os.path.join(out, 'functions.json')))['functions']}
+    seeds_path = os.path.join(out, 'run_seeds.json')
+    seeds = json.load(open(seeds_path)) if os.path.exists(seeds_path) else []
+    known = funcs_set | {s['address'] for s in seeds}
+    img_bytes = pe.get_memory_mapped_image()
+    added_xc = 0
+    for va in range(0x00835000, 0x0083C5C0, 4):
+        fn = struct.unpack_from('<I', img_bytes, va - base)[0]
+        if fn and text_start <= fn < text_end and fn not in known:
+            seeds.append({'address': fn, 'from': va})
+            known.add(fn)
+            added_xc += 1
+    if added_xc:
+        with open(seeds_path, 'w') as f:
+            json.dump(seeds, f, indent=2)
+        print(f'  initterm seeds: added {added_xc}')
+
     print(f'SimJP.exe analysis complete')
 
 

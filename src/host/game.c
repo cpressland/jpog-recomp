@@ -1,7 +1,10 @@
 /*
  * game.c - Run the actual game (SimJP.exe).
  *
- * This calls the game's main function at 0x484330 with proper setup.
+ * Enters SimJP.exe through its real MSVC 6 C runtime start-up
+ * (mainCRTStartup at 0x00731118), which runs both _initterm tables
+ * (constructing all static globals, including AApplication at 0x008B8580),
+ * parses command-line arguments via __getmainargs, and calls main(0x484330).
  */
 #define _GNU_SOURCE
 #include <stdint.h>
@@ -11,17 +14,54 @@
 
 #include "win32hle.h"
 #include "jpog.h"
-#include "recomp_funcs.h"
 
-/* The game's real main function (from survey.json) */
-#define GAME_MAIN 0x484330
+/* Global AApplication object (vtable 0x00CE6C40 once constructed). */
+#define AAPPLICATION_OBJ 0x008B8580u
 
-/* TApplication constructor and global object address */
-#define TAPPLICATION_CTOR 0x01701150
-#define TAPPLICATION_OBJ 0x008B8580
+static int g_run_max_frames;
+static int g_run_frames;
 
-int jpog_run_game(void) {
-    /* Find SimJP.exe module */
+void jpog_game_on_present(void) {
+    if (g_run_max_frames <= 0) return;
+    g_run_frames++;
+    if (g_run_frames >= g_run_max_frames) {
+        fprintf(stderr, "[game] reached %d frames; exiting 0\n", g_run_frames);
+        hle_exit(0);
+    }
+}
+
+void jpog_game_on_update(void) {}
+
+void jpog_game_log_initterm(const char *tag, uint32_t begin, uint32_t end) {
+    int count = 0;
+    uint32_t last = 0;
+    for (uint32_t p = begin; p < end; p += 4) {
+        uint32_t fn = MEM32(p);
+        if (fn) { count++; last = fn; }
+    }
+    fprintf(stderr, "[game] _initterm(%s: 0x%08X..0x%08X): %d entries, last 0x%08X\n",
+            tag, begin, end, count, last);
+}
+
+void jpog_game_log_main(uint32_t esp) {
+    /* Called after `push ebp` at 0x00484330: [esp]=saved_ebp, [esp+4]=retaddr, [esp+8]=argc, [esp+12]=argv */
+    uint32_t argc = MEM32(esp + 8);
+    uint32_t argv = MEM32(esp + 12);
+    uint32_t argv0 = argv ? MEM32(argv) : 0;
+    uint32_t argv1 = argv ? MEM32(argv + 4) : 0;
+    fprintf(stderr, "[game] entering main(0x00484330): MEM32(0x%08X)=0x%08X, _onexit=%d, argc=%u, argv[0]=\"%s\", argv[1]=0x%08X\n",
+            AAPPLICATION_OBJ, MEM32(AAPPLICATION_OBJ), jpog_msvcrt_onexit_count(),
+            argc, argv0 ? (const char *)hle_ptr(argv0) : "(null)", argv1);
+}
+
+void jpog_game_milestone(int n, const char *name) {
+    static uint32_t seen;
+    if (n >= 1 && n <= 31 && (seen & (1u << n))) return;
+    if (n >= 1 && n <= 31) seen |= (1u << n);
+    fprintf(stderr, "[game] milestone %d: %s\n", n, name);
+}
+
+int jpog_run_game(int frames) {
     jpog_module *exe = NULL;
     for (int i = 0; i < g_jpog_nmod; i++) {
         if (g_jpog_mod[i].is_exe) {
@@ -35,41 +75,16 @@ int jpog_run_game(void) {
         return 1;
     }
 
-    fprintf(stderr, "[game] Initializing global TApplication object at 0x%08X\n", TAPPLICATION_OBJ);
-    
-    /* Call TApplication constructor to initialize the global object */
-    /* The constructor is a thiscall with 'this' in ecx */
-    recomp_func_t ctor = recomp_lookup(TAPPLICATION_CTOR);
-    if (!ctor) {
-        fprintf(stderr, "[game] TApplication constructor not found at 0x%08X\n", TAPPLICATION_CTOR);
+    if (!exe->img.entry) {
+        fprintf(stderr, "[game] SimJP.exe has no entry point\n");
         return 1;
     }
-    
-    uint32_t saved_esp = g_esp;
-    PUSH32(g_esp, RECOMP_RETADDR);
-    g_ecx = TAPPLICATION_OBJ;
-    ctor();
-    g_esp = saved_esp;
-    
-    fprintf(stderr, "[game] TApplication initialized, vtable at 0x%08X\n", MEM32(TAPPLICATION_OBJ));
 
-    fprintf(stderr, "[game] Running SimJP.exe at 0x%08X\n", GAME_MAIN);
+    g_run_max_frames = frames;
+    g_run_frames = 0;
 
-    /* Set up argc and argv on the guest stack */
-    /* The game expects: int main(int argc, char **argv) */
-    uint32_t argc = 1;
-    
-    /* Allocate argv array on guest stack */
-    uint32_t argv_str = hle_va(hle_alloc(16));  /* "C:\\SimJP.exe\0" */
-    memcpy(hle_ptr(argv_str), "C:\\SimJP.exe\0", 14);
-    
-    uint32_t argv = hle_va(hle_alloc(8));  /* pointer to argv[0] */
-    MEM32(argv) = argv_str;
-    
-    /* Call the game's main function */
-    uint32_t args[2] = { argc, argv };
-    uint32_t result = hle_call_guest(GAME_MAIN, 2, args);
-    
+    fprintf(stderr, "[game] Entering SimJP.exe mainCRTStartup at 0x%08X\n", exe->img.entry);
+    uint32_t result = hle_call_guest(exe->img.entry, 0, NULL);
     fprintf(stderr, "[game] SimJP.exe returned %u\n", result);
-    return result;
+    return (int)result;
 }

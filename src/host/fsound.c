@@ -489,7 +489,7 @@ X(Update) {                                              /* the streams that hav
     }
     RET(0, 0);
 }
-X(GetMaxChannels) { RET(g_nch, 0); }
+X(GetMaxChannels) { RET(g_open ? g_nch : 0, 0); }
 X(GetChannelsPlaying) { int n = 0; LOCKED(for (int i = 0; i < g_nch; i++) n += g_ch[i].used); RET(n, 0); }
 X(GetMemoryStats) { if (A32(0)) MEM32(A32(0)) = (uint32_t)g_bytes; if (A32(1)) MEM32(A32(1)) = (uint32_t)g_most; RET(0, 2); }
 X(SetSFXMasterVolume) { int v = (int)A32(0); LOCKED(g_master = v < 0 ? 0 : v > 255 ? 255 : v); RET(0, 1); }

@@ -95,6 +95,7 @@ static void c_free(void) { if (A32(0)) hle_heap_free(APTR(0)); RETV(0); }
 #define MAX_ONEXIT 4096
 static uint32_t g_onexit[MAX_ONEXIT];
 static int g_nonexit;
+int jpog_msvcrt_onexit_count(void) { return g_nonexit; }
 
 static void c__initterm(void) {              /* (begin, end): the constructors between, in order */
     uint32_t end = A32(1);

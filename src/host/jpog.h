@@ -33,6 +33,7 @@ uint32_t jpog_load_library(const char *name);                       /* a lifted 
 int  jpog_free_library(uint32_t base);                              /* 1 if base was one */
 
 uint32_t jpog_msvcrt_data(const char *name);                        /* msvcrt.c: a variable msvcrt exports, or 0 */
+int  jpog_msvcrt_onexit_count(void);                                /* msvcrt.c: registered _onexit entries */
 void jpog_setjmp3(void);                                            /* setjmp.c */
 void jpog_longjmp(void);
 void jpog_cpuid(void);                                              /* cpu.c */
@@ -71,4 +72,5 @@ extern const win32hle_shim jpog_d3d8_shims[];                       /* d3d8.c */
 extern const win32hle_shim jpog_msvcrt_shims[];                     /* msvcrt.c */
 extern const win32hle_shim jpog_shims[];                            /* shims.c */
 
-int jpog_run_game(void);                                            /* game.c: run SimJP.exe */
+int jpog_run_game(int frames);                                      /* game.c: run SimJP.exe */
+void jpog_game_on_present(void);                                    /* game.c: frame counter for --run --frames */

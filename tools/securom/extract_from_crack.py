@@ -67,6 +67,19 @@ def main():
     
     with open('work/securom/sites.json', 'w') as f:
         json.dump(output, f, indent=2)
+
+    # Also extract the decrypted tail of .text (0x0072F000-0x00733000, 16 KB),
+    # which SecuROM encrypts on disk. It holds the import thunks (including
+    # AApplication::OnUpdate at 0x72FC86) and MSVC 6's mainCRTStartup (0x731118).
+    tail_va = 0x0072F000
+    tail_size = 0x4000
+    tail_off = pe.get_offset_from_rva(tail_va - base)
+    with open('crack/simjp.exe', 'rb') as f:
+        f.seek(tail_off)
+        tail_bytes = f.read(tail_size)
+    with open('work/securom/text_tail.bin', 'wb') as f:
+        f.write(tail_bytes)
+    print(f'Extracted decrypted .text tail (0x{tail_va:08X}, {len(tail_bytes)} bytes) to work/securom/text_tail.bin')
     
     print(f'Resolved: {len(resolved)}/{len(sites)}')
     print(f'Failed: {len(failed)}/{len(sites)}')

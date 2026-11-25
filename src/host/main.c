@@ -172,7 +172,7 @@ __attribute__((visibility("default"))) int jpog_main(int argc, char **argv) {
         jpog_headless = headless;
         keep_registry(full);
         if (hle_screen_open(JPOG_TITLE, !windowed, headless) != 0) return 1;
-        int rc = jpog_run_game();
+        int rc = jpog_run_game(frames);
         hle_exit(rc);
     }
     if (view || terrain || gui || movie || park) {

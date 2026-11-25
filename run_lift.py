@@ -70,7 +70,26 @@ BIG_FUNCTION_LINES_DEFAULT = 10000
 HOT_FUNCTIONS = {}
 
 # Remaster patches: C emitted after one instruction, by module (va -> C).
-PATCHES = {}
+PATCHES = {
+    'simjp': {
+        0x007311A5: '{ extern void jpog_game_log_initterm(const char*, uint32_t, uint32_t); jpog_game_log_initterm("xi", 0x0083C5C4u, 0x0083C5C8u); }',
+        0x007311D8: '{ extern void jpog_game_log_initterm(const char*, uint32_t, uint32_t); jpog_game_log_initterm("xc", 0x00835000u, 0x0083C5C0u); }',
+        0x00484330: '{ extern void jpog_game_log_main(uint32_t); jpog_game_log_main(esp); }',
+        0x0047A120: '{ extern void jpog_game_milestone(int, const char*); jpog_game_milestone(1, "ARootTask::ARootTask"); }',
+        0x0047C5E0: '{ extern void jpog_game_milestone(int, const char*); jpog_game_milestone(2, "AllocateRenderInterface"); }',
+        0x0047C7E0: '{ extern void jpog_game_milestone(int, const char*); jpog_game_milestone(2, "CreateRenderInterface"); }',
+        0x0047CEA0: '{ extern void jpog_game_milestone(int, const char*); jpog_game_milestone(3, "CreateDisplayDevice"); }',
+        0x0047CB80: '{ extern void jpog_game_milestone(int, const char*); jpog_game_milestone(4, "CreateARenderer"); }',
+        0x0047CBB0: '{ extern void jpog_game_milestone(int, const char*); jpog_game_milestone(5, "CreateInputSystem"); }',
+        0x0047D1A0: '{ extern void jpog_game_milestone(int, const char*); jpog_game_milestone(6, "CreateSoundSystem"); }',
+        0x0047CBE0: '{ extern void jpog_game_milestone(int, const char*); jpog_game_milestone(7, "CreateGUISystem"); }',
+        0x006D74B0: '{ extern void jpog_game_milestone(int, const char*); jpog_game_milestone(8, "AMoviePlayer::AMoviePlayer"); }',
+        0x00484FF0: '{ extern void jpog_game_milestone(int, const char*); jpog_game_milestone(9, "AFrontEndController::AFrontEndController"); }',
+        0x0048A550: '{ extern void jpog_game_milestone(int, const char*); jpog_game_milestone(9, "AFrontEndState::AFrontEndState"); }',
+        0x0047CC00: '{ extern void jpog_game_milestone(int, const char*); jpog_game_milestone(10, "FinishFrontEndLoading"); }',
+        0x0072FC86: '{ extern void jpog_game_on_update(void); jpog_game_on_update(); }',
+    },
+}
 
 CPUID_LIFTED = 'CPUID(eax, ebx, ecx, edx);'
 CPUID_HOST = '{ extern void jpog_cpuid(void); RECOMP_REGS_OUT(); jpog_cpuid(); RECOMP_REGS_IN(); }'

@@ -208,34 +208,6 @@ static void bind_module(jpog_module *m) {
                 m->file, lifted, shims, stubs, m->missing);
 }
 
-/* For SimJP.exe, also patch the original IAT (at 0x739000) to match the resolved PE IAT.
- * The original IAT slots contain addresses of PE IAT slots, which we now resolve to
- * actual function addresses. We need to update the original IAT to contain those addresses. */
-static void patch_original_iat(jpog_module *m) {
-    if (!m->is_exe) return;  /* Only for SimJP.exe */
-    
-    /* The original IAT is at 0x739000 and has 1108 entries */
-    uint32_t original_iat_base = 0x739000;
-    uint32_t original_iat_count = 1108;
-    
-    /* For each entry in the original IAT, check if it points to a PE IAT slot */
-    for (uint32_t i = 0; i < original_iat_count; i++) {
-        uint32_t *orig_slot = (uint32_t *)hle_ptr(original_iat_base + i * 4);
-        uint32_t pe_iat_slot = *orig_slot;
-        
-        /* Check if this looks like a PE IAT slot address (in the 0x00E0XXXX range) */
-        if (pe_iat_slot >= 0x00E0E000 && pe_iat_slot < 0x00E10000) {
-            /* Read the resolved function address from the PE IAT slot */
-            uint32_t func_addr = *(uint32_t *)hle_ptr(pe_iat_slot);
-            /* Update the original IAT slot to contain the function address */
-            *orig_slot = func_addr;
-        }
-    }
-    
-    if (jpog_verbose)
-        fprintf(stderr, "[loader] %s: patched original IAT at 0x%08X\n", m->file, original_iat_base);
-}
-
 int jpog_load(const char *game) {
     static const struct { const char *file; uint32_t base, entry, stamp; int on_demand; } want[] = JPOG_MODULES;
     for (size_t i = 0; i < sizeof want / sizeof want[0]; i++) {
@@ -284,7 +256,6 @@ int jpog_load(const char *game) {
     }
     for (int i = 0; i < g_jpog_nmod; i++) {
         bind_module(&g_jpog_mod[i]);
-        patch_original_iat(&g_jpog_mod[i]);
     }
     return 0;
 }

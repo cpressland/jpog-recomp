@@ -73,102 +73,47 @@ def patch(game, work):
         patched_count += 1
     
     print(f'Patched {patched_count} call sites')
-    
-    # Also patch references to .cms_t and .cms_d (SecuROM's code and data) to point to safe stubs
-    # These are likely exception handlers or other control flow from SecuROM
-    # We'll point them to RET instructions in .text
-    cms_t_start = 0xD56000
-    cms_t_end = 0xD89000
-    cms_d_start = 0xD89000
-    cms_d_end = 0xE0D000
-    
-    # Find a suitable location for stubs (RET instructions)
-    # We'll use the end of .text section
-    pe_full = pefile.PE(data=bytes(data))
-    text_section = None
-    for s in pe_full.sections:
-        if s.Name.startswith(b'.text'):
-            text_section = s
+
+    # Restore the decrypted tail of .text (0x0072F000-0x00733000, 16 KB).
+    # SecuROM encrypts these 4 pages on disk; they hold the import thunks
+    # (including AApplication::OnUpdate at 0x72FC86) and mainCRTStartup (0x731118).
+    tail_path = os.path.join(os.path.dirname(sites_path), 'text_tail.bin')
+    if not os.path.exists(tail_path):
+        raise SystemExit(f'Missing {tail_path}: run tools/securom/extract_from_crack.py first')
+    tail_bytes = open(tail_path, 'rb').read()
+    tail_va = 0x0072F000
+    tail_offset = pe.get_offset_from_rva(tail_va - base)
+    if len(tail_bytes) != 0x4000:
+        raise SystemExit(f'{tail_path}: expected 0x4000 bytes, got 0x{len(tail_bytes):X}')
+    data[tail_offset:tail_offset + len(tail_bytes)] = tail_bytes
+    print(f'Restored decrypted .text tail at 0x{tail_va:08X} ({len(tail_bytes)} bytes)')
+
+    # Restore the original PE headers that SecuROM redirected to .cms_t/.idata:
+    # - AddressOfEntryPoint -> 0x00331118 (VA 0x00731118, MSVC 6 mainCRTStartup)
+    # - Import Directory    -> RVA 0x00341874, size 0x1B8 (the game's original 21 DLLs)
+    # - IAT Directory       -> RVA 0x00339000, size 0x11A4 (the game's original 1,108 slots)
+    e_lfanew = struct.unpack_from('<I', data, 0x3C)[0]
+    opt_off = e_lfanew + 24
+    struct.pack_into('<I', data, opt_off + 16, 0x00331118)                 # AddressOfEntryPoint
+    struct.pack_into('<II', data, opt_off + 96 + 1 * 8, 0x00341874, 0x1B8) # DIR_IMPORT
+    struct.pack_into('<II', data, opt_off + 96 + 12 * 8, 0x00339000, 0x11A4) # DIR_IAT
+
+    # Clear CODE/EXEC flags on SecuROM's .cms_t section so pe_analyze/disasm32
+    # only span the game's contiguous code sections (.text + PSGSFD*, 0x464000..0x739000)
+    # and never cross .data's uninitialized BSS into .cms_t.
+    nsec = struct.unpack_from('<H', data, e_lfanew + 6)[0]
+    opt_size = struct.unpack_from('<H', data, e_lfanew + 20)[0]
+    sec_off = opt_off + opt_size
+    for i in range(nsec):
+        o = sec_off + i * 40
+        if data[o:o + 6] == b'.cms_t':
+            chars = struct.unpack_from('<I', data, o + 36)[0]
+            chars &= ~(0x00000020 | 0x20000000)  # IMAGE_SCN_CNT_CODE | IMAGE_SCN_MEM_EXECUTE
+            struct.pack_into('<I', data, o + 36, chars)
             break
-    
-    if text_section:
-        # Use the last few bytes of .text for stubs
-        stub_rva = text_section.VirtualAddress + text_section.Misc_VirtualSize - 32
-        stub_va = base + stub_rva
-        
-        # Write RET instructions (one for each stub location)
-        stub_offset = pe_full.get_offset_from_rva(stub_rva)
-        for i in range(16):
-            data[stub_offset + i] = 0xC3  # RET
-        
-        # Patch all references to .cms_t to point to the first stub
-        patched_refs = 0
-        for i in range(0, len(data) - 4, 4):
-            val = struct.unpack_from('<I', data, i)[0]
-            if cms_t_start <= val < cms_t_end:
-                struct.pack_into('<I', data, i, stub_va)
-                patched_refs += 1
-        
-        print(f'Patched {patched_refs} references to .cms_t -> stub at 0x{stub_va:08X}')
-        
-        # Patch all references to .cms_d to point to the second stub
-        stub_va_2 = stub_va + 1
-        patched_refs_2 = 0
-        for i in range(0, len(data) - 4, 4):
-            val = struct.unpack_from('<I', data, i)[0]
-            if cms_d_start <= val < cms_d_end:
-                struct.pack_into('<I', data, i, stub_va_2)
-                patched_refs_2 += 1
-        
-        print(f'Patched {patched_refs_2} references to .cms_d -> stub at 0x{stub_va_2:08X}')
-        
-        # Patch references to .idata (SecuROM's import directory)
-        idata_start = 0xE0D000
-        idata_end = 0xE1C000
-        stub_va_3 = stub_va + 2
-        patched_refs_3 = 0
-        for i in range(0, len(data) - 4, 4):
-            val = struct.unpack_from('<I', data, i)[0]
-            if idata_start <= val < idata_end:
-                struct.pack_into('<I', data, i, stub_va_3)
-                patched_refs_3 += 1
-        
-        if patched_refs_3 > 0:
-            print(f'Patched {patched_refs_3} references to .idata -> stub at 0x{stub_va_3:08X}')
-    
-    # Now patch the original IAT (at 0x739000) to match the PE's import directory
-    # This must happen after patching .idata references, otherwise they get overwritten
-    # The original IAT contains placeholder values that need to be replaced with
-    # the addresses from the PE's import directory, so the loader can resolve them
-    
-    # Build a map of (dll, name) -> IAT slot in PE's import directory
-    pe_full = pefile.PE(data=bytes(data))
-    pe_iat_map = {}
-    if hasattr(pe_full, 'DIRECTORY_ENTRY_IMPORT'):
-        for entry in pe_full.DIRECTORY_ENTRY_IMPORT:
-            dll = entry.dll.decode().lower()
-            for imp in entry.imports:
-                if imp.name:
-                    name = imp.name.decode()
-                    pe_iat_map[(dll, name)] = imp.address
-    
-    # Patch each original IAT slot to point to the corresponding PE import directory entry
-    patched_iat = 0
-    for slot_str, (dll, name) in survey['iat'].items():
-        slot = int(slot_str, 16)
-        rva = slot - base
-        offset = pe.get_offset_from_rva(rva)
-        
-        # Find the corresponding PE import directory entry
-        key = (dll.lower(), name)
-        if key in pe_iat_map:
-            pe_slot = pe_iat_map[key]
-            # Patch the original IAT slot to contain the PE import directory slot address
-            struct.pack_into('<I', data, offset, pe_slot)
-            patched_iat += 1
-    
-    print(f'Patched {patched_iat} original IAT slots to point to PE import directory')
-    
+
+    print('Restored entry point (0x00731118), original import/IAT (0x00741874/0x00739000), cleared .cms_t EXEC')
+
     # Write the patched PE
     patched_path = os.path.join(out_dir, 'SimJP.exe')
     with open(patched_path, 'wb') as f:

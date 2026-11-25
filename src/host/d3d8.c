@@ -589,6 +589,7 @@ M(v_Present) {                               /* (src, dst, window, dirty) */
     ++g_frames;
     shots();
     gpu_present(d);
+    jpog_game_on_present();
     free_dead();
     if (!jpog_headless) hle_screen_pump();
     RET(D3D_OK, 5);
