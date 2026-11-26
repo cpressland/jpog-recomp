@@ -159,11 +159,13 @@ own encrypted code. `tools/securom/survey.py` records all of this, and
 (tpw-recomp's SafeDisc emulator, at `tools/securom/emu`): it decrypts itself
 and installs the dispatcher **from the disc image, with no physical disc**.
 
-The 3,642-entry call-site table has been fully resolved using a nocd crack
-as a reference. `tools/securom/extract_from_crack.py` extracts the original
-import for each redirected call site. The result is `work/securom/sites.json`,
-which maps each call site to its original DLL and function. See
-[docs/RECON.md](docs/RECON.md).
+`tools/securom/unwrap.py` unwraps `SimJP.exe` directly from the installed game
+folder in ~2 seconds with no third-party crack and no physical disc: it runs
+SecuROM's own decryptors under Unicorn, recovers the 9-byte session key from
+the `0xD8CEF0` call-site hash table, decrypts the 16 KB tail of `.text`
+(including `mainCRTStartup` at `0x731118`), and decodes all 3,642 redirected
+import calls through SecuROM's 12-case switch into `work/securom/sites.json`
+and `work/securom/text_tail.bin`. See [docs/RECON.md](docs/RECON.md).
 
 ## The engine
 

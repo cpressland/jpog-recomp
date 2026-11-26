@@ -34,19 +34,29 @@ DISPATCH = 0xD8CEC0
 TEXT = (0x464000, 0x733000)
 
 
-def stage(root, game, disc):
+def stage(root, game, disc=None):
     """The emulator's view: <root>/cd (drive D:) and <root>/cdrive (C:), with
     C:\\JPOG the game folder."""
     os.makedirs(root, exist_ok=True)
-    for link, target in (('cd', disc), (os.path.join('cdrive', 'JPOG'), game)):
-        p = os.path.join(root, link)
-        os.makedirs(os.path.dirname(p), exist_ok=True)
-        if os.path.islink(p):
-            os.remove(p)
-        os.symlink(os.path.abspath(target), p)
+    cd = os.path.join(root, 'cd')
+    if disc:
+        if os.path.islink(cd):
+            os.remove(cd)
+        elif os.path.isdir(cd):
+            os.rmdir(cd)
+        os.symlink(os.path.abspath(disc), cd)
+    else:
+        if os.path.islink(cd):
+            os.remove(cd)
+        os.makedirs(cd, exist_ok=True)
+    jpog_link = os.path.join(root, 'cdrive', 'JPOG')
+    os.makedirs(os.path.dirname(jpog_link), exist_ok=True)
+    if os.path.islink(jpog_link):
+        os.remove(jpog_link)
+    os.symlink(os.path.abspath(game), jpog_link)
     os.makedirs(os.path.join(root, 'cdrive', 'WINDOWS', 'TEMP'), exist_ok=True)
     os.makedirs(os.path.join(root, 'cdrive', 'WINDOWS', 'SYSTEM32'), exist_ok=True)
-    return os.path.join(root, 'cd')
+    return cd
 
 
 class Boot:

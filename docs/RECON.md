@@ -100,26 +100,30 @@ impractical; the resolver drives this dispatcher per site instead
 (PLAN.md Phase 2). The decrypted image is dumped to
 `work/securom/simjp-decrypted.bin` for analysis.
 
-## Resolution via nocd crack
+## Unwrapping from the shipping binary (`tools/securom/unwrap.py`)
 
-The dispatcher's resolution logic proved too complex to drive dynamically
-(anti-tamper checks, encrypted tables, state restoration issues). Instead,
-we used a publicly available nocd crack (`crack/simjp.exe`, from
-[archive.org](https://archive.org/details/jurassic-park-operation-genesis))
-which had already patched all 3,642 call sites back to their original
-imports.
+`tools/securom/unwrap.py` unwraps `SimJP.exe` directly from the player's own
+installed game folder in ~2 seconds, with no third-party crack and no physical
+disc:
 
-The crack changes the entry point from `0xD7EF8A` (SecuROM's CRT startup)
-to `0x331118` (the game's real main at `0x484330`), bypassing the dispatcher
-entirely. Each redirected `call [0xD8CEC0]` is patched back to `call [IAT
-slot]`, where the IAT slot points to the original import.
-
-`tools/securom/extract_from_crack.py` reads each of the 3,642 call sites,
-extracts the IAT slot address from the `ff 15` instruction, and maps it to
-the actual import via the PE's import directory. **Result:** all 3,642 sites
-resolved, written to `work/securom/sites.json`. Verified against the known
-test cases: `CreateMutexA` at `0x48434f` and `TApplication::Create` at
-`0x48440f` both match.
+1. Boots `SimJP.exe`'s SecuROM wrapper under Unicorn (`probe.Boot(..., stop_at='dispatch')`)
+   until `[0xD8CEC0] <- 0xD5DA00` is installed (~165 API calls, ~1s). By this
+   point `.cms_t` and 15,872 of the 16,384 bytes of `.text`'s tail
+   (`0x72F000`–`0x733000`) are decrypted and the runtime switch constants are
+   populated in `.cms_d`.
+2. Decrypts the 14-byte product ID at `0xD8B518` (`UKD_806255.001`) via
+   SecuROM's reverse-XOR loop (`0xD63352`).
+3. Recovers the 9-byte session key (`0xE052B0`) directly from the `0xD8CEF0`
+   hash table, `SimJP.exe`'s own 3,642 `call [0xD8CEC0]` sites, and the
+   encrypted `.text` bounds at `0xD8B5A4`–`0xD8B5A8`.
+4. Decrypts the remaining 512-byte OEP window (`0x731018`–`0x731218`) using
+   SecuROM's exact formula (`0xD5BB0A`–`0xD5BB69`), revealing `mainCRTStartup`
+   at `0x731118` and its redirected `__p___initenv` call at `0x7311E2`.
+5. Decodes all 3,642 `.text` sites (plus `0x7311E2` inside the OEP window)
+   through SecuROM's exact 12-case switch (`0xD5DE53`–`0xD5DF9F`) back to their
+   original IAT slots in `0x739000`–`0x73A1A4`, verifying `CreateMutexA`
+   (`0x48434F`), `TApplication::Create` (`0x48440F`), and `__p___initenv`
+   (`0x7311E2`). Output: `work/securom/sites.json` and `work/securom/text_tail.bin`.
 
 Distribution by DLL:
 - `tkernelinterface.dll`: 2,782 (76%)

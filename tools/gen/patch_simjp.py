@@ -8,38 +8,38 @@ We use sites.json to rewrite each `call [0xD8CEC0]` back to `call [original_iat_
 import json
 import os
 import struct
+import sys
 
 import pefile
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+SECUROM_DIR = os.path.join(os.path.dirname(HERE), 'securom')
 
 
 def patch(game, work):
     src = os.path.join(game, 'SimJP.exe')
     out_dir = os.path.join(work, 'simjp')
     os.makedirs(out_dir, exist_ok=True)
-    
-    # Load sites.json
-    sites_path = os.path.join(work, '..', 'securom', 'sites.json')
-    if not os.path.exists(sites_path):
-        sites_path = 'work/securom/sites.json'
-    
+
+    sys.path.insert(0, SECUROM_DIR)
+    from unwrap import read_original_iat, unwrap
+
+    securom_out = os.path.join(os.path.dirname(os.path.abspath(work)), 'securom')
+    sites_path = os.path.join(securom_out, 'sites.json')
+    tail_path = os.path.join(securom_out, 'text_tail.bin')
+    if not (os.path.exists(sites_path) and os.path.exists(tail_path)):
+        unwrap(game, securom_out, root=os.path.join(securom_out, 'emu'))
+
     with open(sites_path) as f:
         sites = json.load(f)
-    
+
     print(f'Loading {sites["resolved"]} resolved sites from {sites_path}')
-    
-    # Load the original IAT from survey.json
-    survey_path = 'work/securom/survey.json'
-    with open(survey_path) as f:
-        survey = json.load(f)
-    
-    # Build a map of (dll, name) -> IAT slot address
-    iat_map = {}
-    for slot_str, (dll, name) in survey['iat'].items():
-        slot = int(slot_str, 16)
-        iat_map[(dll.lower(), name)] = slot
-    
-    # Load the PE file as raw bytes
+
+    # Load the PE file as raw bytes and parse its intact original IAT at 0x739000
     data = bytearray(open(src, 'rb').read())
+    iat_to_imp = read_original_iat(bytes(data))
+    iat_map = {(dll, name): slot for slot, (dll, name) in iat_to_imp.items()}
+
     pe = pefile.PE(data=bytes(data), fast_load=True)
     base = pe.OPTIONAL_HEADER.ImageBase
     
@@ -77,9 +77,6 @@ def patch(game, work):
     # Restore the decrypted tail of .text (0x0072F000-0x00733000, 16 KB).
     # SecuROM encrypts these 4 pages on disk; they hold the import thunks
     # (including AApplication::OnUpdate at 0x72FC86) and mainCRTStartup (0x731118).
-    tail_path = os.path.join(os.path.dirname(sites_path), 'text_tail.bin')
-    if not os.path.exists(tail_path):
-        raise SystemExit(f'Missing {tail_path}: run tools/securom/extract_from_crack.py first')
     tail_bytes = open(tail_path, 'rb').read()
     tail_va = 0x0072F000
     tail_offset = pe.get_offset_from_rva(tail_va - base)

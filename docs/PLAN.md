@@ -203,15 +203,16 @@ Each phase ends with something that runs.
   installs the dispatcher (slot `0xD8CEC0 <- 0xD5DA00`, after 165 Win32
   calls), and runs to `ExitProcess` — so far **with no physical disc
   needed**. See [docs/RECON.md](RECON.md) for the run.
-- **Resolution via nocd crack.** The dispatcher proved too complex to drive
-  statically (anti-tamper checks, encrypted resolution tables). Instead, we
-  used a publicly available nocd crack (`crack/simjp.exe` from archive.org)
-  which had already patched all 3,642 call sites back to their original
-  imports. `tools/securom/extract_from_crack.py` reads each call site from
-  the crack, extracts the IAT slot it calls, and maps it to the actual
-  import. **Done:** all 3,642 sites resolved, verified against known test
-  cases (`CreateMutexA` at `0x48434f`, `TApplication::Create` at `0x48440f`).
-  Output: `work/securom/sites.json`.
+- **Self-contained unwrap (`tools/securom/unwrap.py`).** Boots SecuROM under
+  Unicorn until the dispatcher is installed (~1s, no physical disc, no
+  third-party crack), decrypts the product ID at `0xD8B518`, recovers the
+  9-byte session key from the `0xD8CEF0` hash table and `SimJP.exe`'s own
+  3,642 call sites, decrypts the remaining 512-byte OEP window around
+  `mainCRTStartup` (`0x731118`), and decodes all 3,642 redirected call sites
+  (plus `0x7311E2`) through SecuROM's 12-case switch. **Done:** all 3,642
+  sites resolved and the full 16 KB `.text` tail decrypted cleanly from
+  `game/SimJP.exe` alone. Output: `work/securom/sites.json` and
+  `work/securom/text_tail.bin`.
 - **(b)**, the signature solver, remains as a fallback if the crack's
   resolutions prove incorrect: `tfree`'s untouched slot and `CreateMutexA`/
   `TApplication::Create` in `0x484330` are known answers to check it by.
