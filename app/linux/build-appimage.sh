@@ -130,7 +130,7 @@ ff="$out/ffmpeg-build"
 rm -rf "$ff" && mkdir -p "$ff"
 tar -xJf "$cache/ffmpeg-7.1.1.tar.xz" -C "$ff"
 ( cd "$ff/ffmpeg-7.1.1" &&
-  ./configure --prefix="$u/ffmpeg" --extra-cflags="-O2 -fPIC" \
+  ./configure --prefix="$u/ffmpeg" --extra-cflags="-O2 -fPIC" --disable-x86asm \
     --enable-static --disable-shared --disable-programs --disable-doc --disable-network --disable-autodetect \
     --disable-everything --disable-avdevice --disable-avfilter --disable-swscale --disable-postproc \
     --enable-demuxer=bink --enable-decoder=bink,binkaudio_rdft,binkaudio_dct >/dev/null &&

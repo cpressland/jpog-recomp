@@ -90,6 +90,7 @@ tar -xJf "$CACHE/libvorbis-1.3.7.tar.xz" -C "$VB"
     --enable-static --disable-shared >/dev/null &&
   make -j"$(sysctl -n hw.ncpu)" >/dev/null && make install >/dev/null )
 ( cd "$VB/libvorbis-1.3.7" &&
+  sed -i '' 's/-force_cpusubtype_ALL//g' configure &&
   PKG_CONFIG_PATH="$VB/out/lib/pkgconfig" \
   OGG_CFLAGS="-I$VB/out/include" \
   OGG_LIBS="-L$VB/out/lib -logg" \
