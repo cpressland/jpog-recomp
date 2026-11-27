@@ -81,18 +81,21 @@ ditto "$FF/out/lib" "$T/ffmpeg/lib" && rm -rf "$T/ffmpeg/lib/pkgconfig"
 rm -rf "$FF"
 
 # libogg + libvorbis, for the game's Ogg Vorbis music (src/host/fsound.c), static.
-VB="$OUT/vorbis-build"
+VB="$(pwd)/$OUT/vorbis-build"
 rm -rf "$VB" && mkdir -p "$VB/out"
 tar -xJf "$CACHE/libogg-1.3.5.tar.xz" -C "$VB"
 tar -xJf "$CACHE/libvorbis-1.3.7.tar.xz" -C "$VB"
 ( cd "$VB/libogg-1.3.5" &&
-  CFLAGS="-O2 -arch arm64 -mmacosx-version-min=26.0" ./configure --prefix="$PWD/../out" \
+  CFLAGS="-O2 -arch arm64 -mmacosx-version-min=26.0" ./configure --prefix="$VB/out" \
     --enable-static --disable-shared >/dev/null &&
   make -j"$(sysctl -n hw.ncpu)" >/dev/null && make install >/dev/null )
 ( cd "$VB/libvorbis-1.3.7" &&
-  CFLAGS="-O2 -arch arm64 -mmacosx-version-min=26.0 -I$PWD/../out/include" \
-  LDFLAGS="-L$PWD/../out/lib" \
-  ./configure --prefix="$PWD/../out" --with-ogg="$PWD/../out" \
+  PKG_CONFIG_PATH="$VB/out/lib/pkgconfig" \
+  OGG_CFLAGS="-I$VB/out/include" \
+  OGG_LIBS="-L$VB/out/lib -logg" \
+  CFLAGS="-O2 -arch arm64 -mmacosx-version-min=26.0 -I$VB/out/include" \
+  LDFLAGS="-L$VB/out/lib" \
+  ./configure --prefix="$VB/out" --with-ogg="$VB/out" \
     --enable-static --disable-shared --disable-docs --disable-examples --disable-oggtest >/dev/null &&
   make -j"$(sysctl -n hw.ncpu)" >/dev/null && make install >/dev/null )
 mkdir -p "$T/vorbis"

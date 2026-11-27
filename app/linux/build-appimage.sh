@@ -23,7 +23,7 @@ APT="git curl ca-certificates xz-utils build-essential cmake ninja-build pkg-con
   libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxi-dev libxinerama-dev libxss-dev libxxf86vm-dev
   libxfixes-dev libwayland-dev libxkbcommon-dev wayland-protocols libdecor-0-dev libegl1-mesa-dev libgl1-mesa-dev
   libgles2-mesa-dev libdrm-dev libgbm-dev libasound2-dev libpulse-dev libpipewire-0.3-dev libudev-dev libdbus-1-dev
-  libshaderc1 fonts-dejavu-core"
+  python3 fonts-dejavu-core"
 version=
 while [ $# -gt 1 ]; do
   case $1 in
@@ -145,6 +145,9 @@ tar -xJf "$cache/libvorbis-1.3.7.tar.xz" -C "$vb"
   CFLAGS="-O2 -fPIC" ./configure --prefix="$u/vorbis" --enable-static --disable-shared >/dev/null &&
   make -j"$(nproc)" >/dev/null && make install >/dev/null )
 ( cd "$vb/libvorbis-1.3.7" &&
+  PKG_CONFIG_PATH="$u/vorbis/lib/pkgconfig" \
+  OGG_CFLAGS="-I$u/vorbis/include" \
+  OGG_LIBS="-L$u/vorbis/lib -logg" \
   CFLAGS="-O2 -fPIC -I$u/vorbis/include" LDFLAGS="-L$u/vorbis/lib" \
   ./configure --prefix="$u/vorbis" --with-ogg="$u/vorbis" \
     --enable-static --disable-shared --disable-docs --disable-examples --disable-oggtest >/dev/null &&
@@ -157,9 +160,17 @@ cp -R "$out/Vulkan-Headers-vulkan-sdk-1.4.350.0/include/vulkan" "$out/Vulkan-Hea
 install -Dm644 "$out/Vulkan-Headers-vulkan-sdk-1.4.350.0/LICENSE.md" "$u/share/licenses/Vulkan-Headers.md"
 rm -rf "$out/Vulkan-Headers-vulkan-sdk-1.4.350.0"
 
-shaderc_so=$(find /usr/lib -name 'libshaderc_shared.so.1*' -type f 2>/dev/null | head -1)
-[ -n "$shaderc_so" ] || { echo "no libshaderc_shared.so.1 found (install libshaderc1)" >&2; exit 1; }
-install -m755 "$shaderc_so" "$u/lib/libshaderc_shared.so.1"
+echo "==> libshaderc_shared.so.1"
+shd="$out/shaderc-build"
+rm -rf "$shd" && mkdir -p "$shd"
+git clone -q --depth 1 --branch v2024.3 https://github.com/google/shaderc.git "$shd/shaderc"
+python3 "$shd/shaderc/utils/git-sync-deps" >/dev/null
+cmake -S "$shd/shaderc" -B "$shd/b" -G Ninja -DCMAKE_BUILD_TYPE=Release \
+  -DSHADERC_SKIP_TESTS=ON -DSHADERC_SKIP_EXAMPLES=ON -DSHADERC_SKIP_COPYRIGHT_CHECK=ON \
+  -DSPIRV_SKIP_TESTS=ON -DENABLE_GLSLANG_BINARIES=OFF -DENABLE_CTEST=OFF >/dev/null
+cmake --build "$shd/b" --target shaderc_shared -j"$(nproc)" >/dev/null
+install -m755 "$shd/b/libshaderc/libshaderc_shared.so.1" "$u/lib/libshaderc_shared.so.1"
+rm -rf "$shd"
 
 # pkg-config finds them wherever the AppImage is mounted.
 sed -i 's|^prefix=.*|prefix=${pcfiledir}/../..|' "$u"/lib/pkgconfig/*.pc
