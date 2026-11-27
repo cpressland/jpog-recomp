@@ -21,10 +21,83 @@
 static int g_run_max_frames;
 static int g_run_frames;
 
+/* Optional scripted input for headless gameplay tests (JPOG_AUTO env var):
+ * comma-separated steps: FRAME:esc | FRAME:enter | FRAME:space |
+ * FRAME:move:DX:DY | FRAME:click | FRAME:shot:PATH */
+typedef struct {
+    int frame;
+    char op[16];
+    int a, b;
+    char path[256];
+} auto_step_t;
+static auto_step_t g_auto[64];
+static int g_nauto;
+static int g_auto_init;
+
+static void auto_parse(void) {
+    g_auto_init = 1;
+    const char *env = getenv("JPOG_AUTO");
+    if (!env || !*env) return;
+    char buf[2048];
+    snprintf(buf, sizeof buf, "%s", env);
+    for (char *tok = strtok(buf, ","); tok && g_nauto < 64; tok = strtok(NULL, ",")) {
+        auto_step_t *s = &g_auto[g_nauto];
+        memset(s, 0, sizeof *s);
+        char *c1 = strchr(tok, ':');
+        if (!c1) continue;
+        *c1++ = 0;
+        s->frame = atoi(tok);
+        char *c2 = strchr(c1, ':');
+        if (c2) *c2++ = 0;
+        snprintf(s->op, sizeof s->op, "%s", c1);
+        if (!strcmp(s->op, "move") && c2) {
+            sscanf(c2, "%d:%d", &s->a, &s->b);
+        } else if (!strcmp(s->op, "shot") && c2) {
+            snprintf(s->path, sizeof s->path, "%s", c2);
+        }
+        g_nauto++;
+    }
+}
+
+static void auto_tick(int f) {
+    if (!g_auto_init) auto_parse();
+    for (int i = 0; i < g_nauto; i++) {
+        auto_step_t *s = &g_auto[i];
+        if (!strcmp(s->op, "esc") || !strcmp(s->op, "enter") || !strcmp(s->op, "space") ||
+            !strcmp(s->op, "right") || !strcmp(s->op, "left") || !strcmp(s->op, "up") ||
+            !strcmp(s->op, "down") || !strcmp(s->op, "tab") || !strcmp(s->op, "b")) {
+            uint32_t vk = 0, sc = 0;
+            if (!strcmp(s->op, "esc"))        { vk = 0x1Bu; sc = 0x01u; }
+            else if (!strcmp(s->op, "enter")) { vk = 0x0Du; sc = 0x1Cu; }
+            else if (!strcmp(s->op, "space")) { vk = 0x20u; sc = 0x39u; }
+            else if (!strcmp(s->op, "right")) { vk = 0x27u; sc = 0xCDu; }
+            else if (!strcmp(s->op, "left"))  { vk = 0x25u; sc = 0xCBu; }
+            else if (!strcmp(s->op, "up"))    { vk = 0x26u; sc = 0xC8u; }
+            else if (!strcmp(s->op, "down"))  { vk = 0x28u; sc = 0xD0u; }
+            else if (!strcmp(s->op, "tab"))   { vk = 0x09u; sc = 0x0Fu; }
+            else if (!strcmp(s->op, "b"))     { vk = 0x42u; sc = 0x30u; }
+            if (f == s->frame) hle_input_key(1, vk, sc);
+            else if (f == s->frame + 2) hle_input_key(0, vk, sc);
+        } else if (!strcmp(s->op, "move")) {
+            if (f == s->frame) hle_input_motion(s->a, s->b);
+        } else if (!strcmp(s->op, "click")) {
+            int x, y;
+            hle_input_position(&x, &y);
+            if (f == s->frame) hle_input_mouse(0x0201u /* WM_LBUTTONDOWN */, x, y);
+            else if (f == s->frame + 2) hle_input_mouse(0x0202u /* WM_LBUTTONUP */, x, y);
+        } else if (!strcmp(s->op, "shot")) {
+            if (f == s->frame) {
+                jpog_d3d8_shot(s->path);
+                fprintf(stderr, "[game] shot frame %d -> %s\n", f, s->path);
+            }
+        }
+    }
+}
+
 void jpog_game_on_present(void) {
-    if (g_run_max_frames <= 0) return;
     g_run_frames++;
-    if (g_run_frames >= g_run_max_frames) {
+    auto_tick(g_run_frames);
+    if (g_run_max_frames > 0 && g_run_frames >= g_run_max_frames) {
         fprintf(stderr, "[game] reached %d frames; exiting 0\n", g_run_frames);
         hle_exit(0);
     }

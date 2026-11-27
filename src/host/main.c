@@ -60,14 +60,15 @@ static void on_fault(int sig, siginfo_t *si, void *uc) {
 static void seed_registry(void) {
     hle_reg_set_string(0x80000002u, "SOFTWARE\\BTS\\JP", "InstallDir", "C:\\");   /* HKEY_LOCAL_MACHINE */
 }
-/* What the game writes there it finds again: User/registry.txt, beside the
- * game folder. */
-static void keep_registry(const char *game) {
-    static char file[PATH_MAX + 32];
-    snprintf(file, sizeof file, "%s/../User", game);
-    mkdir(file, 0755);
-    snprintf(file, sizeof file, "%s/../User/registry.txt", game);
-    hle_reg_load(file);
+/* What the game writes (registry, Data/SaveGame, options.ini) goes into
+ * User/ beside the game folder, leaving the installed game untouched. */
+static void setup_user_dir(const char *game) {
+    static char dir[PATH_MAX + 32], reg[PATH_MAX + 64];
+    snprintf(dir, sizeof dir, "%s/../User", game);
+    mkdir(dir, 0755);
+    hle_set_overlay(game, dir);
+    snprintf(reg, sizeof reg, "%s/registry.txt", dir);
+    hle_reg_load(reg);
 }
 
 __attribute__((visibility("default"))) int jpog_main(int argc, char **argv) {
@@ -141,17 +142,7 @@ __attribute__((visibility("default"))) int jpog_main(int argc, char **argv) {
     win32hle_register(win32hle_eh32);
     recomp_host_init();
     hle_set_drive('C', full);
-    
-    /* Map drive D: to the extracted disc image for CD checks */
-    const char *disc_dir = "work/iso";
-    char disc_full[PATH_MAX];
-    if (realpath(disc_dir, disc_full)) {
-        hle_set_drive('D', disc_full);
-        if (jpog_verbose)
-            fprintf(stderr, "[host] mapped drive D: to %s\n", disc_full);
-    } else {
-        fprintf(stderr, "[host] warning: %s not found, CD checks may fail\n", disc_dir);
-    }
+    hle_set_drive('D', full);                /* virtual CD drive (shims.c reports DRIVE_CDROM, label "JPOG") */
     
     hle_set_command_line("\"C:\\SimJP.exe\"");
     seed_registry();
@@ -170,7 +161,7 @@ __attribute__((visibility("default"))) int jpog_main(int argc, char **argv) {
     fflush(stdout);
     if (run) {
         jpog_headless = headless;
-        keep_registry(full);
+        setup_user_dir(full);
         if (hle_screen_open(JPOG_TITLE, !windowed, headless) != 0) return 1;
         int rc = jpog_run_game(frames);
         hle_exit(rc);
