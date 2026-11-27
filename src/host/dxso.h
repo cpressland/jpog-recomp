@@ -24,6 +24,7 @@
 #define DXSO_MAX_INPUTS 16
 
 enum { DXSO_TEX_2D = 0, DXSO_TEX_CUBE = 1, DXSO_TEX_3D = 2 };
+enum { DXSO_MSL = 0, DXSO_GLSL = 1 };
 #define DXSO_USAGE_REG 0xE0              /* a Direct3D 8 input: index is the register */
 
 typedef struct {
@@ -33,6 +34,7 @@ typedef struct {
      * (hardware shadow mapping, tex2Dproj on a D24S8 texture). */
     uint16_t sampler_depth;
     uint8_t project[8];        /* ps_1_x: divide the stage's coordinates by z (3) or w (4) */
+    uint8_t lang;              /* DXSO_MSL (default), DXSO_GLSL */
 } dxso_options;
 
 typedef struct {
@@ -64,6 +66,7 @@ typedef struct {
 
 /* The text every shader opens with (malloc'd). */
 void dxso_head(char **text);
+void dxso_head_glsl(int pixel, char **text);
 /* 0, with out filled; else -1, and out->error says why. */
 int dxso_translate(const uint32_t *code, size_t words, const dxso_options *opt, dxso_shader *out);
 void dxso_free(dxso_shader *s);

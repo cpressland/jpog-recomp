@@ -179,6 +179,115 @@ const char *ff_vertex_text(void) {
     return text;
 }
 
+const char *ff_vertex_text_glsl(void) {
+    static char *text;
+    if (text) return text;
+    static const char body[] =
+"struct ff_light { vec4 diffuse, specular, ambient, pos, dir, att, spot; };\n"
+"layout(set = 0, binding = 0, std140) uniform ff_vs_ubo {\n"
+"    mat4 world_view[4]; vec4 normal[3]; mat4 proj; mat4 tex[8];\n"
+"    vec4 viewport, mdiffuse, mambient, mspecular, memissive, ambient, fog;\n"
+"    float power; uint rhw, has, lighting, specular, localviewer, normalize_, sources;\n"
+"    uint fog_mode, range_fog, nblend, pad;\n"
+"    uvec4 stage[8]; ff_light light[8];\n} U;\n"
+"layout(location = 0) in vec4 v0;\nlayout(location = 1) in vec4 v1;\nlayout(location = 3) in vec4 v3;\n"
+"layout(location = 5) in vec4 v5;\nlayout(location = 6) in vec4 v6;\nlayout(location = 7) in vec4 v7;\n"
+"layout(location = 8) in vec4 v8;\nlayout(location = 9) in vec4 v9;\nlayout(location = 10) in vec4 v10;\n"
+"layout(location = 11) in vec4 v11;\nlayout(location = 12) in vec4 v12;\nlayout(location = 13) in vec4 v13;\n"
+"layout(location = 14) in vec4 v14;\n"
+"vec4 ff_source(uint which, vec4 mat, vec4 c1, vec4 c2) { return which == 1u ? c1 : which == 2u ? c2 : mat; }\n"
+"void main()\n{\n"
+"    vec4 c1 = (U.has & 2u) != 0u ? v5 : vec4(1.0), c2 = (U.has & 4u) != 0u ? v6 : vec4(0.0);\n"
+"    vec4 uv[8] = vec4[8](v7, v8, v9, v10, v11, v12, v13, v14);\n"
+"    vec3 ep = vec3(0.0), n = vec3(0.0);\n"
+"    vec4 od0, od1; float ofog;\n"
+"    if (U.rhw != 0u) {\n"
+"        float w = v0.w != 0.0 ? 1.0 / v0.w : 1.0;\n"
+"        vec2 p = (v0.xy - U.viewport.xy) / U.viewport.zw * vec2(2.0, -2.0) + vec2(-1.0, 1.0);\n"
+"        dxso_position(vec4(p, v0.z, 1.0) * w);\n"
+"        od0 = c1; od1 = c2; ofog = c2.a;\n"
+"    } else {\n"
+"        vec4 pos = vec4(v0.xyz, 1.0), e4;\n"
+"        if (U.nblend == 0u) e4 = U.world_view[0] * pos;\n"
+"        else {\n"
+"            float last = 1.0; e4 = vec4(0.0);\n"
+"            for (uint i = 0u; i < U.nblend; i++) { float w = v1[i]; last -= w; e4 += w * (U.world_view[i] * pos); }\n"
+"            e4 += last * (U.world_view[U.nblend] * pos);\n"
+"        }\n"
+"        ep = e4.xyz;\n"
+"        if ((U.has & 1u) != 0u) {\n"
+"            n = v3.x * U.normal[0].xyz + v3.y * U.normal[1].xyz + v3.z * U.normal[2].xyz;\n"
+"            if (U.normalize_ != 0u) n = dot(n, n) > 0.0 ? normalize(n) : n;\n"
+"        }\n"
+"        dxso_position(U.proj * e4);\n"
+"        od0 = c1; od1 = c2;\n"
+"        if (U.lighting != 0u) {\n"
+"            vec4 md = ff_source(U.sources & 3u, U.mdiffuse, c1, c2), ms = ff_source((U.sources >> 2u) & 3u, U.mspecular, c1, c2);\n"
+"            vec4 ma = ff_source((U.sources >> 4u) & 3u, U.mambient, c1, c2), me = ff_source((U.sources >> 6u) & 3u, U.memissive, c1, c2);\n"
+"            vec3 dif = vec3(0.0), amb = U.ambient.rgb, spc = vec3(0.0);\n"
+"            for (uint i = 0u; i < 8u; i++) {\n"
+"                ff_light L = U.light[i];\n"
+"                uint type = uint(L.pos.w);\n"
+"                if (type == 0u) break;\n"
+"                vec3 l; float at = 1.0;\n"
+"                if (type == 3u) l = -L.dir.xyz;\n"
+"                else {\n"
+"                    l = L.pos.xyz - ep; float d = length(l);\n"
+"                    if (d > L.dir.w) continue;\n"
+"                    l = d > 0.0 ? l / d : vec3(0.0);\n"
+"                    at = 1.0 / max(L.att.x + L.att.y * d + L.att.z * d * d, 1e-20);\n"
+"                    if (type == 2u) {\n"
+"                        float rho = dot(-l, L.dir.xyz);\n"
+"                        if (rho <= L.spot.y) at = 0.0;\n"
+"                        else if (rho < L.spot.x) at *= pow((rho - L.spot.y) / (L.spot.x - L.spot.y), L.att.w);\n"
+"                    }\n"
+"                }\n"
+"                amb += L.ambient.rgb * at;\n"
+"                float nl = dot(n, l);\n"
+"                if (nl > 0.0) {\n"
+"                    dif += L.diffuse.rgb * (nl * at);\n"
+"                    if (U.specular != 0u) {\n"
+"                        vec3 v = U.localviewer != 0u ? normalize(-ep) : vec3(0.0, 0.0, -1.0);\n"
+"                        float nh = dot(n, normalize(l + v));\n"
+"                        if (nh > 0.0) spc += L.specular.rgb * (pow(nh, U.power) * at);\n"
+"                    }\n"
+"                }\n"
+"            }\n"
+"            od0 = vec4(me.rgb + ma.rgb * amb + md.rgb * dif, md.a);\n"
+"            od1 = vec4(ms.rgb * spc, (U.has & 4u) != 0u ? c2.a : 0.0);\n"
+"        }\n"
+"        ofog = c2.a;\n"
+"        if (U.fog_mode != 0u) {\n"
+"            float d = U.range_fog != 0u ? length(ep) : abs(ep.z);\n"
+"            ofog = U.fog_mode == 3u ? (U.fog.y - d) / (U.fog.y - U.fog.x) : U.fog_mode == 1u ? exp(-d * U.fog.z)\n"
+"                                                                           : exp(-(d * U.fog.z) * (d * U.fog.z));\n"
+"        }\n"
+"    }\n"
+"    dx_d0 = saturate(od0); dx_d1 = saturate(od1); dx_fog = ofog;\n"
+"    vec4 t[8];\n"
+"    for (uint i = 0u; i < 8u; i++) {\n"
+"        uvec4 s = U.stage[i];\n"
+"        vec4 c = uv[s.x & 7u];\n"
+"        if (s.y == 1u) c = vec4(n, 1.0);\n"
+"        else if (s.y == 2u) c = vec4(ep, 1.0);\n"
+"        else if (s.y == 3u) c = vec4(reflect(normalize(ep), n), 1.0);\n"
+"        else if (s.w == 0u) c = vec4(0.0, 0.0, 0.0, 1.0);\n"
+"        else if (s.z != 0u) c = s.w == 1u ? vec4(c.x, 1.0, 0.0, 0.0) : s.w == 2u ? vec4(c.xy, 1.0, 0.0) : s.w == 3u ? vec4(c.xyz, 1.0) : c;\n"
+"        else c = s.w == 1u ? vec4(c.x, 0.0, 0.0, 1.0) : s.w == 2u ? vec4(c.xy, 0.0, 1.0) : s.w == 3u ? vec4(c.xyz, 1.0) : c;\n"
+"        if (s.z != 0u) c = U.tex[i] * c;\n"
+"        t[i] = c;\n"
+"    }\n"
+"    dx_t0 = t[0]; dx_t1 = t[1]; dx_t2 = t[2]; dx_t3 = t[3]; dx_t4 = t[4]; dx_t5 = t[5]; dx_t6 = t[6]; dx_t7 = t[7];\n}\n";
+    char *head;
+    dxso_head_glsl(0, &head);
+    size_t n = strlen(head);
+    text = malloc(n + sizeof body);
+    memcpy(text, head, n);
+    memcpy(text + n, body, sizeof body);
+    free(head);
+    return text;
+}
+
 static const uint8_t TYPE_COMPS[8] = { 1, 2, 3, 4, 4, 4, 2, 4 };
 
 void ff_vs_fill(const dev_t_ *d, const elem_t *e, int ne, ff_vs *u) {
@@ -347,6 +456,86 @@ char *ff_pixel_text(const ff_pskey *k) {
     }
     if (k->specular) add(&o, "    cur.rgb = saturate(cur.rgb + spec.rgb);\n");
     add(&o, "    return dxso_finish(cur, in, P);\n}\n");
+    return o.p;
+}
+
+static void argument_glsl(uint32_t a, int stage, char *o, size_t cap) {
+    static const char *const base[] = { "dx_d0", "cur", "", "U.factor", "spec", "tmp" };
+    char b[32];
+    if ((a & 7) == 2) snprintf(b, sizeof b, "x%d", stage);
+    else snprintf(b, sizeof b, "%s", (a & 7) < 6 ? base[a & 7] : "cur");
+    char c[48];
+    snprintf(c, sizeof c, a & 0x20 ? "vec4(%s.a)" : "%s", b);
+    snprintf(o, cap, a & 0x10 ? "(1.0 - %s)" : "%s", c);
+}
+
+static void operation_glsl(int op, const char *a0, const char *a1, const char *a2, int stage, char *o, size_t cap) {
+    switch (op) {
+    case 2: snprintf(o, cap, "%s", a1); break;
+    case 3: snprintf(o, cap, "%s", a2); break;
+    case 4: snprintf(o, cap, "%s * %s", a1, a2); break;
+    case 5: snprintf(o, cap, "%s * %s * 2.0", a1, a2); break;
+    case 6: snprintf(o, cap, "%s * %s * 4.0", a1, a2); break;
+    case 7: snprintf(o, cap, "%s + %s", a1, a2); break;
+    case 8: snprintf(o, cap, "%s + %s - 0.5", a1, a2); break;
+    case 9: snprintf(o, cap, "(%s + %s - 0.5) * 2.0", a1, a2); break;
+    case 10: snprintf(o, cap, "%s - %s", a1, a2); break;
+    case 11: snprintf(o, cap, "%s + %s * (1.0 - %s)", a1, a2, a1); break;
+    case 12: snprintf(o, cap, "mix(%s, %s, dx_d0.a)", a2, a1); break;
+    case 13: snprintf(o, cap, "mix(%s, %s, x%d.a)", a2, a1, stage); break;
+    case 14: snprintf(o, cap, "mix(%s, %s, U.factor.a)", a2, a1); break;
+    case 15: snprintf(o, cap, "%s + %s * (1.0 - x%d.a)", a1, a2, stage); break;
+    case 16: snprintf(o, cap, "mix(%s, %s, cur.a)", a2, a1); break;
+    case 18: snprintf(o, cap, "%s + %s.a * %s", a1, a1, a2); break;
+    case 19: snprintf(o, cap, "%s * %s + %s.a", a1, a2, a1); break;
+    case 20: snprintf(o, cap, "(1.0 - %s.a) * %s + %s", a1, a2, a1); break;
+    case 21: snprintf(o, cap, "(1.0 - %s) * %s + %s.a", a1, a2, a1); break;
+    case 24: snprintf(o, cap, "vec4(saturate(4.0 * dot(%s.rgb - 0.5, %s.rgb - 0.5)))", a1, a2); break;
+    case 25: snprintf(o, cap, "%s + %s * %s", a0, a1, a2); break;
+    case 26: snprintf(o, cap, "mix(%s, %s, %s)", a2, a1, a0); break;
+    default: snprintf(o, cap, "%s", a1); break;
+    }
+}
+
+char *ff_pixel_text_glsl(const ff_pskey *k) {
+    sb o = { 0 };
+    char *head;
+    dxso_head_glsl(1, &head);
+    add(&o, "%s", head);
+    free(head);
+    add(&o, "layout(set = 0, binding = 4, std140) uniform ff_ps_ubo { vec4 factor; vec4 constant_[8]; } U;\n");
+    for (int i = 0; i < k->n; i++)
+        if (k->s[i].kind != 0xFF)
+            add(&o, "layout(set = 0, binding = %d) uniform %s s%d;\n", 8 + i,
+                k->s[i].kind == DXSO_TEX_CUBE ? "samplerCube" : k->s[i].kind == DXSO_TEX_3D ? "sampler3D" : "sampler2D", i);
+    add(&o, "layout(location = 0) out vec4 dx_c0;\n\nvoid main()\n{\n"
+            "    vec4 cur = dx_d0, spec = dx_d1, tmp = vec4(0.0), r;\n");
+    int bumped = -1;
+    for (int i = 0; i < k->n; i++) {
+        if (k->s[i].kind != 0xFF) {
+            add(&o, "    vec4 u%d = dx_t%d;\n", i, i);
+            if (k->s[i].project) add(&o, "    u%d /= u%d.%c;\n", i, i, k->s[i].project == 3 ? 'z' : 'w');
+            if (bumped == i - 1 && bumped >= 0)
+                add(&o, "    u%d.xy += x%d.x * P.bem[%d].xy + x%d.y * P.bem[%d].zw;\n", i, i - 1, i - 1, i - 1, i - 1);
+            add(&o, "    vec4 x%d = texture(s%d, u%d.%s);\n", i, i, i, k->s[i].kind == DXSO_TEX_2D ? "xy" : "xyz");
+            if (bumped == i - 1 && bumped >= 0 && k->s[i - 1].cop == 23)
+                add(&o, "    x%d.rgb *= saturate(x%d.z * P.beml[%d].x + P.beml[%d].y);\n", i, i - 1, i - 1, i - 1);
+        } else
+            add(&o, "    vec4 x%d = vec4(0.0, 0.0, 0.0, 1.0);\n", i);
+        char a0[64], a1[64], a2[64], c[400], a[400];
+        if (k->s[i].cop == 22 || k->s[i].cop == 23) { bumped = i; continue; }
+        argument_glsl(k->s[i].ca0, i, a0, sizeof a0), argument_glsl(k->s[i].ca1, i, a1, sizeof a1), argument_glsl(k->s[i].ca2, i, a2, sizeof a2);
+        operation_glsl(k->s[i].cop, a0, a1, a2, i, c, sizeof c);
+        if (k->s[i].cop == 24) snprintf(a, sizeof a, "r");
+        else if (k->s[i].aop <= 1) snprintf(a, sizeof a, "cur");
+        else {
+            argument_glsl(k->s[i].aa0, i, a0, sizeof a0), argument_glsl(k->s[i].aa1, i, a1, sizeof a1), argument_glsl(k->s[i].aa2, i, a2, sizeof a2);
+            operation_glsl(k->s[i].aop, a0, a1, a2, i, a, sizeof a);
+        }
+        add(&o, "    r = %s;\n    r = saturate(vec4(r.rgb, (%s).a));\n    %s = r;\n", c, a, k->s[i].result == 5 ? "tmp" : "cur");
+    }
+    if (k->specular) add(&o, "    cur.rgb = saturate(cur.rgb + spec.rgb);\n");
+    add(&o, "    dx_c0 = dxso_finish(cur);\n}\n");
     return o.p;
 }
 

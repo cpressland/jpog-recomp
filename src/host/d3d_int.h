@@ -38,6 +38,7 @@ typedef struct {
     uint64_t gpu_frame;       /* a dynamic buffer: the frame its copy is from */
     uint32_t gpu_offset;      /* ...and where in that frame's ring */
     void *gpu_ring;           /* ...which buffer (not retained: the frame keeps it) */
+    void *gpu_map;            /* ...and where the CPU sees that copy (Vulkan) */
 } res_t;
 
 /* A vertex layout element: what FVF codes and declarations both become. */
@@ -126,6 +127,8 @@ typedef struct {                                /* what the pixel stage's text d
 } ff_pskey;
 const char *ff_vertex_text(void);               /* one vertex stage, steered by ff_vs; inputs v<D3DVSDE_*> */
 char *ff_pixel_text(const ff_pskey *k);         /* malloc'd */
+const char *ff_vertex_text_glsl(void);          /* GLSL 4.50 fixed-function vertex stage */
+char *ff_pixel_text_glsl(const ff_pskey *k);    /* GLSL 4.50 fixed-function pixel stage (malloc'd) */
 void ff_vs_fill(const dev_t_ *d, const elem_t *e, int ne, ff_vs *u);
 void ff_ps_fill(const dev_t_ *d, ff_ps *u);
 void ff_ps_key(const dev_t_ *d, const uint8_t kinds[8], ff_pskey *k);     /* kinds: DXSO_TEX_*, 0xFF none bound */

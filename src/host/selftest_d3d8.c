@@ -495,7 +495,10 @@ static void game_shaders(void) {
             }
             if (MEM32(p) != 0xFFFF || !ops) continue;
             n++;
-            dxso_options opt = { { 0 }, 0, { 0 } };
+            dxso_options opt = { { 0 }, 0, { 0 }, 0 };
+#ifndef __APPLE__
+            opt.lang = DXSO_GLSL;
+#endif
             dxso_shader s;
             if (dxso_translate((const uint32_t *)hle_ptr(at), (p + 4 - at) / 4, &opt, &s) != 0) {
                 fprintf(stderr, "[selftest] %s 0x%08X: %s\n", g_jpog_mod[m].file, at, s.error);
