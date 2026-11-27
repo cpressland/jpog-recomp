@@ -92,6 +92,12 @@ PATCHES = {
         # (width != (height / 3) * 4) so widescreen resolutions appear in the
         # in-game Options -> Video -> Screen Resolution selector.
         0x00474618: 'edx = edi;',
+        # ACamera::ConvertGuiScreenToRenderScreen / ConvertRenderScreenToGuiScreen:
+        # match the centered 1:1 square-pixel 2D GUI transform in PGUITRDisplayContext
+        # so 3D cursor picking and world-to-HUD projection stay pixel-aligned across
+        # the full widescreen viewport.
+        0x0050BDBD: '{ float _gw = *(float*)ADDR(esp + 0x0), _gh = *(float*)ADDR(esp + 0x4), _rw = *(float*)ADDR(esp + 0x8), _rh = *(float*)ADDR(esp + 0xC); if (_rh > 0.0f && _gh > 0.0f && _rw > _rh * (4.0f / 3.0f)) { float _sy = _rh / _gh, _cx = 0.5f * (_rw - _gw * _sy), _ix = *(float*)ADDR(MEM32(esp + 0x20)), _ox = _cx + _ix * _sy; if (_ox < 0.0f) _ox = 0.0f; if (_ox > _rw) _ox = _rw; *(float*)ADDR(ebx) = _ox; } }',
+        0x0050BE2C: '{ float _gw = *(float*)ADDR(esp + 0x0), _gh = *(float*)ADDR(esp + 0x4), _rw = *(float*)ADDR(esp + 0x8), _rh = *(float*)ADDR(esp + 0xC); if (_rh > 0.0f && _gh > 0.0f && _rw > _rh * (4.0f / 3.0f)) { float _sy = _rh / _gh, _cx = 0.5f * (_rw - _gw * _sy), _ix = *(float*)ADDR(MEM32(esp + 0x20)); *(float*)ADDR(ebx) = (_ix - _cx) / _sy; } }',
     },
     'trender': {
         # TCameraViewportHandler::OnBeginRender (FOVMode == 0): preserve 4:3
@@ -99,6 +105,20 @@ PATCHES = {
         # Vert- cropping. Updates TRenderContext::PROJECTIONPARAMS so rendering,
         # frustum culling, and 3D cursor picking all stay in sync.
         0x0110EBFB: '{ float _w = *(float*)ADDR(esi + 0x20), _h = *(float*)ADDR(esi + 0x24); if (_h > 0.0f && _w > _h * (4.0f / 3.0f)) _ST(0) = (2.0 / 3.0) * (double)_h; }',
+        # TRenderContext::SetViewportParameters: align partial 3D preview
+        # sub-viewports (Build Menu / Dinopedia) with the centered 4:3 2D GUI.
+        0x0110A955: '{ extern void jpog_ws_adjust_subviewport(float*, float*); jpog_ws_adjust_subviewport((float*)ADDR(ecx + 0x18), (float*)ADDR(ecx + 0x20)); }',
+    },
+    'pguirenderer': {
+        # PGUITRDisplayContext::BeginScene: unstretch 2D menus/HUD on widescreen
+        # by using square pixels (scaleX = scaleY) and centering the 640x480 GUI
+        # horizontally (cx = 0.5 * (scaleX - scaleY) * 640).
+        0x01A01316: '{ float _sx = *(float*)ADDR(esp + 0x8), _sy = *(float*)ADDR(esp + 0xC); if (_sy > 0.0f && _sx > _sy) { *(float*)ADDR(esp + 0x0) = 0.5f * (_sx - _sy) * 640.0f; *(float*)ADDR(esp + 0x8) = _sy; } }',
+    },
+    'tgui': {
+        # TGUIScreen::SetPointerPosition: allow the cursor to travel into the
+        # widescreen left/right wings so the player can click anywhere in the 3D park.
+        0x0141400D: '{ extern int32_t jpog_ws_clamp_gui_x(int32_t, int32_t); eax = (uint32_t)jpog_ws_clamp_gui_x((int32_t)MEM32(esp + 0x18), (int32_t)(int16_t)MEM16(ecx + 0x70)); }',
     },
 }
 

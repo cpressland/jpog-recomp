@@ -105,6 +105,43 @@ void jpog_game_on_present(void) {
 
 void jpog_game_on_update(void) {}
 
+/* Clamp TGUIScreen pointer X to the full viewport width in virtual 640x480 GUI
+ * coordinates when the 2D GUI is centered at 1:1 square pixels on widescreen. */
+int32_t jpog_ws_clamp_gui_x(int32_t x, int32_t gui_w) {
+    uint32_t w, h;
+    jpog_d3d8_size(&w, &h);
+    int32_t pad = 0;
+    if (h > 0 && w * 3u > h * 4u) {
+        double sy = (double)h / 480.0;
+        double cx = 0.5 * ((double)w - (double)gui_w * sy);
+        pad = (int32_t)(cx / sy);
+    }
+    int32_t lo = -pad;
+    int32_t hi = gui_w - 1 + pad;
+    if (x < lo) return lo;
+    if (x > hi) return hi;
+    return x;
+}
+
+/* Map partial 3D preview sub-viewports (e.g., Build Menu / Dinopedia 3D cards)
+ * into the centered 4:3 GUI area on widescreen backbuffers, leaving full-screen
+ * 3D viewports and offscreen render targets untouched. */
+void jpog_ws_adjust_subviewport(float *vx, float *vw) {
+    if (!jpog_d3d8_is_backbuffer()) return;
+    uint32_t w, h;
+    jpog_d3d8_size(&w, &h);
+    if (h == 0 || w * 3u <= h * 4u) return;
+    /* Only offset sub-viewports (GUI preview cards); offscreen render targets
+     * and the main full-screen 3D viewport always start at x = 0. */
+    if (*vx > 0.5f) {
+        float w43 = (float)h * (4.0f / 3.0f);
+        float cx = 0.5f * ((float)w - w43);
+        float scale = w43 / (float)w;
+        *vx = cx + (*vx) * scale;
+        *vw = (*vw) * scale;
+    }
+}
+
 void jpog_game_log_initterm(const char *tag, uint32_t begin, uint32_t end) {
     int count = 0;
     uint32_t last = 0;

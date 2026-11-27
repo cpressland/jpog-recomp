@@ -567,6 +567,17 @@ int jpog_d3d8_shot(const char *path) {       /* the back buffer, as a BMP */
     free(px);
     return ok;
 }
+void jpog_d3d8_size(uint32_t *w, uint32_t *h) {
+    if (!g_device) { *w = 640; *h = 480; return; }
+    dev_t_ *d = DEV(g_device);
+    *w = d->params[0] ? d->params[0] : 640;
+    *h = d->params[1] ? d->params[1] : 480;
+}
+int jpog_d3d8_is_backbuffer(void) {
+    if (!g_device) return 0;
+    dev_t_ *d = DEV(g_device);
+    return d->rt == d->backbuffer;
+}
 static void shots(void) {
     static const char *dir;
     static uint64_t every;

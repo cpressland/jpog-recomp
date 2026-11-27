@@ -65,6 +65,8 @@ void jpog_selftest_engine(void);                                    /* selftest_
 
 void jpog_d3d8_summary(void);                                       /* d3d8.c: the Direct3D 8 calls made, at exit */
 int  jpog_d3d8_shot(const char *path);                              /* the back buffer as a BMP */
+void jpog_d3d8_size(uint32_t *w, uint32_t *h);                      /* current back buffer dimensions */
+int  jpog_d3d8_is_backbuffer(void);                                 /* true when rendering to backbuffer */
 
 void jpog_write_bmp(const char *path, const uint8_t *bgra, uint32_t w, uint32_t h);
 
