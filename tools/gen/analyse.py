@@ -18,6 +18,7 @@ import concurrent.futures
 import json
 import os
 import shutil
+import struct
 import subprocess
 import sys
 import time
@@ -47,6 +48,8 @@ def analyse(game, work, module):
     img = os.path.join(out, os.path.basename(file))
     rebase(src, base, img) if pefile.PE(src, fast_load=True).OPTIONAL_HEADER.ImageBase != base \
         else shutil.copyfile(src, img)
+    text_start = text_end = 0
+    pe_full = None
     if name == 'simjp':
         pe_full = pefile.PE(img)
         code_sections = [s for s in pe_full.sections if (s.Characteristics & 0x20000000) and not s.Name.startswith(b'.cms_')]
@@ -70,6 +73,25 @@ def analyse(game, work, module):
         with open(os.path.join(out, step + '.log'), 'w') as log:
             if subprocess.run(cmd, stdout=log, stderr=subprocess.STDOUT).returncode:
                 raise SystemExit(f'{name}: {step} failed (see {out}/{step}.log)')
+    if name == 'simjp' and pe_full is not None and text_end > text_start:
+        # Ensure every non-null entry in SimJP.exe's _initterm C++ constructor table
+        # (0x00835000..0x0083C5C0) is in the catalog or run_seeds.json: entries are
+        # 0x40-byte spaced per translation unit, so data_code_ptrs.py misses isolated ones.
+        funcs_set = {f['address'] for f in json.load(open(os.path.join(out, 'functions.json')))['functions']}
+        seeds_path = os.path.join(out, 'run_seeds.json')
+        seeds = json.load(open(seeds_path)) if os.path.exists(seeds_path) else []
+        known = funcs_set | {s['address'] for s in seeds}
+        img_bytes = pe_full.get_memory_mapped_image()
+        added_xc = 0
+        for va in range(0x00835000, 0x0083C5C0, 4):
+            fn = struct.unpack_from('<I', img_bytes, va - base)[0]
+            if fn and text_start <= fn < text_end and fn not in known:
+                seeds.append({'address': fn, 'from': va})
+                known.add(fn)
+                added_xc += 1
+        if added_xc:
+            with open(seeds_path, 'w') as f:
+                json.dump(seeds, f, indent=2)
     return f'{name}: {time.time() - start:.0f} s'
 
 
