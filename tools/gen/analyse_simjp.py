@@ -27,14 +27,16 @@ def analyse(game, work):
     out = os.path.join(work, name)
     os.makedirs(out, exist_ok=True)
     
-    # First, patch SimJP.exe to restore original imports
-    # This must be done before analysis to avoid references to the dispatcher
-    sys.path.insert(0, HERE)
-    from patch_simjp import patch
-    patch(game, work)
-    
-    # Use the patched PE for analysis
+    # First, patch SimJP.exe to restore original imports if still SecuROM-wrapped
+    src_in = os.path.join(game, 'SimJP.exe')
     src = os.path.join(out, 'SimJP.exe')
+    pe_in = pefile.PE(src_in, fast_load=True)
+    if pe_in.OPTIONAL_HEADER.AddressOfEntryPoint == 0x00331118:
+        shutil.copyfile(src_in, src)
+    else:
+        sys.path.insert(0, HERE)
+        from patch_simjp import patch
+        patch(game, work)
     
     pe = pefile.PE(src, fast_load=True)
     if pe.FILE_HEADER.TimeDateStamp != 0x3E434C37:

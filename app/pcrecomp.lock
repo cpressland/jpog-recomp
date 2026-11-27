@@ -1,4 +1,5 @@
-# The pcrecomp this project builds with: the fork's stl branch, as stl-recomp
-# pins it (app/pcrecomp.lock there). A release (and anyone building) checks this out.
+# The pcrecomp a release builds with (.github/workflows/release.yml and the
+# Linux builds): cpressland/pcrecomp at the commit this project was built on
+# (docs/patches/*.patch are applied automatically by tools/install/install.py).
 repository=cpressland/pcrecomp
 ref=b7f76500c375ac5f0acad8f0657cc22f506d6257

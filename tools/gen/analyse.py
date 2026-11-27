@@ -15,6 +15,7 @@ For each module of tools/gen/modules.py (all, or those named), in parallel:
 PCRECOMP names the toolkit (default ../pcrecomp beside this repository; from stl-recomp).
 """
 import concurrent.futures
+import json
 import os
 import shutil
 import subprocess
@@ -46,6 +47,14 @@ def analyse(game, work, module):
     img = os.path.join(out, os.path.basename(file))
     rebase(src, base, img) if pefile.PE(src, fast_load=True).OPTIONAL_HEADER.ImageBase != base \
         else shutil.copyfile(src, img)
+    if name == 'simjp':
+        pe_full = pefile.PE(img)
+        code_sections = [s for s in pe_full.sections if (s.Characteristics & 0x20000000) and not s.Name.startswith(b'.cms_')]
+        if code_sections:
+            text_start = min(base + s.VirtualAddress for s in code_sections)
+            text_end = max(base + s.VirtualAddress + max(s.Misc_VirtualSize, s.SizeOfRawData) for s in code_sections)
+            with open(os.path.join(out, 'code_range.json'), 'w') as f:
+                json.dump({'code_start': text_start, 'code_end': text_end}, f, indent=2)
     t, py = tools(), sys.executable
     steps = (
         ('pe', [py, os.path.join(t, 'pe', 'pe_analyze.py'), img, '--json', os.path.join(out, 'pe_analysis.json')]),

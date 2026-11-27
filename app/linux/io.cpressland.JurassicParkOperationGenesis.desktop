@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Jurassic Park: Operation Genesis
+Comment=Build and run your own Jurassic Park
+Exec=jurassic-park-operation-genesis
+Icon=io.cpressland.JurassicParkOperationGenesis
+Terminal=false
+Categories=Game;Simulation;
+Keywords=jurassic;park;dinosaurs;simulation;builder;
