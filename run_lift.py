@@ -88,6 +88,17 @@ PATCHES = {
         0x0048A550: '{ extern void jpog_game_milestone(int, const char*); jpog_game_milestone(9, "AFrontEndState::AFrontEndState"); }',
         0x0047CC00: '{ extern void jpog_game_milestone(int, const char*); jpog_game_milestone(10, "FinishFrontEndLoading"); }',
         0x0072FC86: '{ extern void jpog_game_on_update(void); jpog_game_on_update(); }',
+        # AOptionLogic::EnumerateModes: skip the hardcoded 4:3 filter
+        # (width != (height / 3) * 4) so widescreen resolutions appear in the
+        # in-game Options -> Video -> Screen Resolution selector.
+        0x00474618: 'edx = edi;',
+    },
+    'trender': {
+        # TCameraViewportHandler::OnBeginRender (FOVMode == 0): preserve 4:3
+        # vertical FOV (Hor+) on widescreen viewports (W/H > 4/3) instead of
+        # Vert- cropping. Updates TRenderContext::PROJECTIONPARAMS so rendering,
+        # frustum culling, and 3D cursor picking all stay in sync.
+        0x0110EBFB: '{ float _w = *(float*)ADDR(esi + 0x20), _h = *(float*)ADDR(esi + 0x24); if (_h > 0.0f && _w > _h * (4.0f / 3.0f)) _ST(0) = (2.0 / 3.0) * (double)_h; }',
     },
 }
 
